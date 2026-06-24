@@ -1,6 +1,3 @@
-; Configuration du projet Godot — Sylvelinne
-; Généré pour Godot 4.7 (renderer GL Compatibility pour un max de compatibilité Android)
-
 config_version=5
 
 [application]
