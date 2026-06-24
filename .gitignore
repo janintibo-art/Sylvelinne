@@ -1,0 +1,13 @@
+# --- Godot 4 ---
+.godot/
+/android/
+*.tmp
+
+# --- Builds ---
+/build/
+*.apk
+*.aab
+
+# --- Système ---
+.DS_Store
+Thumbs.db

@@ -1,0 +1,82 @@
+name: Build Android APK
+
+# Construit automatiquement l'APK à chaque push sur "main",
+# ou manuellement depuis l'onglet "Actions" (bouton "Run workflow").
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  GODOT_VERSION: "4.7"
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Récupérer le projet
+        uses: actions/checkout@v4
+
+      - name: Installer Java (JDK 17)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Installer le SDK Android
+        uses: android-actions/setup-android@v3
+
+      - name: Télécharger Godot ${{ env.GODOT_VERSION }} + templates d'export
+        run: |
+          set -e
+          GV="$GODOT_VERSION"
+          BASE="https://github.com/godotengine/godot-builds/releases/download/${GV}-stable"
+          wget -q "${BASE}/Godot_v${GV}-stable_linux.x86_64.zip"
+          wget -q "${BASE}/Godot_v${GV}-stable_export_templates.tpz"
+          unzip -q "Godot_v${GV}-stable_linux.x86_64.zip"
+          mkdir -p "$HOME/.local/bin"
+          mv "Godot_v${GV}-stable_linux.x86_64" "$HOME/.local/bin/godot"
+          chmod +x "$HOME/.local/bin/godot"
+          unzip -q "Godot_v${GV}-stable_export_templates.tpz"
+          mkdir -p "$HOME/.local/share/godot/export_templates/${GV}.stable"
+          mv templates/* "$HOME/.local/share/godot/export_templates/${GV}.stable/"
+
+      - name: Générer la clé de signature debug
+        run: |
+          keytool -keyalg RSA -genkeypair -alias androiddebugkey \
+            -keypass android -keystore "$HOME/debug.keystore" \
+            -storepass android -dname "CN=Android Debug,O=Android,C=US" \
+            -validity 9999 -deststoretype pkcs12
+
+      - name: Pré-importer le projet (génère le cache + les réglages éditeur)
+        run: |
+          "$HOME/.local/bin/godot" --headless --path . --editor --quit-after 1000 || true
+
+      - name: Configurer le SDK et la clé debug dans Godot
+        run: |
+          CFG="$HOME/.config/godot/editor_settings-4.tres"
+          if [ ! -f "$CFG" ]; then
+            mkdir -p "$HOME/.config/godot"
+            printf '[gd_resource type="EditorSettings" format=3]\n\n[resource]\n' > "$CFG"
+          fi
+          {
+            echo "export/android/android_sdk_path = \"$ANDROID_SDK_ROOT\""
+            echo "export/android/debug_keystore = \"$HOME/debug.keystore\""
+            echo "export/android/debug_keystore_user = \"androiddebugkey\""
+            echo "export/android/debug_keystore_pass = \"android\""
+          } >> "$CFG"
+
+      - name: Construire l'APK (debug)
+        run: |
+          mkdir -p build
+          "$HOME/.local/bin/godot" --headless --path . --export-debug "Android" build/Sylvelinne.apk
+          ls -lh build/
+
+      - name: Publier l'APK (artifact téléchargeable)
+        uses: actions/upload-artifact@v4
+        with:
+          name: Sylvelinne-debug-apk
+          path: build/Sylvelinne.apk
+          if-no-files-found: error
