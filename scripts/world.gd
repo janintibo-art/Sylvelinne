@@ -28,7 +28,7 @@ const START_ITEMS: Array = [
 const PROPS: Array = [
 	{"tex": "buildings/maison2", "pos": Vector2(-260, -360), "h": 380.0, "foot": Vector2(150, 40)},
 	{"tex": "buildings/maison3", "pos": Vector2(330, -340), "h": 380.0, "foot": Vector2(150, 40)},
-	{"tex": "buildings/maison1", "pos": Vector2(-560, -180), "h": 340.0, "foot": Vector2(180, 40)},
+	{"tex": "buildings/boutique", "pos": Vector2(-560, -180), "h": 370.0, "foot": Vector2(230, 40)},
 	{"tex": "buildings/auberge", "pos": Vector2(560, -160), "h": 340.0, "foot": Vector2(180, 40)},
 	{"tex": "nature/arbre", "pos": Vector2(-820, 320), "h": 440.0, "foot": Vector2(70, 30)},
 	{"tex": "nature/rocher1", "pos": Vector2(560, 330), "h": 150.0, "foot": Vector2(130, 30)},
