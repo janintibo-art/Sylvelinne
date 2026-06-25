@@ -2,7 +2,7 @@ extends Node2D
 
 # =====================================================================
 #  Sylvelinne — niveau de test (Aëla)
-#  Deplacement 8 dir + idle + SORT + INVENTAIRE
+#  Deplacement + idle + SORT + INVENTAIRE + VILLAGE decore
 # =====================================================================
 
 const PLAYER_SPEED: float = 240.0
@@ -19,28 +19,17 @@ const DIR_VEC: Dictionary = {
 	"up": Vector2(0, -1), "up_right": Vector2(0.7071, -0.7071)
 }
 
-# Inventaire de depart (icone, nom affiche, quantite)
 const ITEMS: Array = [
-	{"icon": "epee", "name": "Épée", "qty": 1},
-	{"icon": "arc", "name": "Arc", "qty": 1},
-	{"icon": "carquois", "name": "Carquois", "qty": 1},
-	{"icon": "bouclier", "name": "Bouclier", "qty": 1},
-	{"icon": "sac", "name": "Sac à dos", "qty": 1},
-	{"icon": "potion_soin", "name": "Potion de soin", "qty": 2},
-	{"icon": "potion_mana", "name": "Potion de mana", "qty": 1},
-	{"icon": "bourse", "name": "Bourse", "qty": 1},
-	{"icon": "cristal", "name": "Cristal", "qty": 3},
-	{"icon": "grimoire", "name": "Grimoire", "qty": 1},
-	{"icon": "torche", "name": "Torche", "qty": 2},
-	{"icon": "corde", "name": "Corde", "qty": 1},
-	{"icon": "piege", "name": "Piège", "qty": 2},
-	{"icon": "herbes", "name": "Herbes", "qty": 4},
-	{"icon": "pain", "name": "Pain", "qty": 3},
-	{"icon": "pomme", "name": "Pomme", "qty": 2},
-	{"icon": "coffre", "name": "Coffre", "qty": 1},
-	{"icon": "cle", "name": "Clé", "qty": 1},
-	{"icon": "lanterne", "name": "Lanterne", "qty": 1},
-	{"icon": "tapis", "name": "Tapis de couchage", "qty": 1},
+	{"icon": "epee", "name": "Épée", "qty": 1}, {"icon": "arc", "name": "Arc", "qty": 1},
+	{"icon": "carquois", "name": "Carquois", "qty": 1}, {"icon": "bouclier", "name": "Bouclier", "qty": 1},
+	{"icon": "sac", "name": "Sac à dos", "qty": 1}, {"icon": "potion_soin", "name": "Potion de soin", "qty": 2},
+	{"icon": "potion_mana", "name": "Potion de mana", "qty": 1}, {"icon": "bourse", "name": "Bourse", "qty": 1},
+	{"icon": "cristal", "name": "Cristal", "qty": 3}, {"icon": "grimoire", "name": "Grimoire", "qty": 1},
+	{"icon": "torche", "name": "Torche", "qty": 2}, {"icon": "corde", "name": "Corde", "qty": 1},
+	{"icon": "piege", "name": "Piège", "qty": 2}, {"icon": "herbes", "name": "Herbes", "qty": 4},
+	{"icon": "pain", "name": "Pain", "qty": 3}, {"icon": "pomme", "name": "Pomme", "qty": 2},
+	{"icon": "coffre", "name": "Coffre", "qty": 1}, {"icon": "cle", "name": "Clé", "qty": 1},
+	{"icon": "lanterne", "name": "Lanterne", "qty": 1}, {"icon": "tapis", "name": "Tapis de couchage", "qty": 1},
 ]
 
 var player: CharacterBody2D
@@ -50,6 +39,13 @@ var idle_tex: Dictionary = {}
 var move_tex: Dictionary = {}
 var cast_tex: Dictionary = {}
 var orb_tex: Texture2D
+
+var patch_dirt: Texture2D
+var patch_gmid: Texture2D
+var patch_gdark: Texture2D
+var grass_var: Array = []
+var dirt_spots: Array = []
+var houses: Array = []
 
 var facing: String = "down"
 var moving: bool = false
@@ -72,6 +68,7 @@ func _ready() -> void:
 	_load_textures()
 	_load_ground()
 	orb_tex = _make_orb()
+	_build_village()
 	_create_player()
 	_create_hud()
 	_create_inventory()
@@ -99,9 +96,58 @@ func _load_frames(action: String, d: String) -> Array:
 
 
 func _load_ground() -> void:
-	var p := "res://assets/tilesets/tile_grass_light.png"
-	if ResourceLoader.exists(p):
-		ground_tex = load(p)
+	if ResourceLoader.exists("res://assets/tilesets/tile_grass_light.png"):
+		ground_tex = load("res://assets/tilesets/tile_grass_light.png")
+	if ResourceLoader.exists("res://assets/tilesets/patch_dirt.png"):
+		patch_dirt = load("res://assets/tilesets/patch_dirt.png")
+	if ResourceLoader.exists("res://assets/tilesets/patch_grass_mid.png"):
+		patch_gmid = load("res://assets/tilesets/patch_grass_mid.png")
+	if ResourceLoader.exists("res://assets/tilesets/patch_grass_dark.png"):
+		patch_gdark = load("res://assets/tilesets/patch_grass_dark.png")
+
+
+func _build_village() -> void:
+	houses = [
+		{"pos": Vector2(-600, -470), "size": Vector2(210, 150), "roof": Color(0.67, 0.27, 0.24)},
+		{"pos": Vector2(-120, -560), "size": Vector2(240, 165), "roof": Color(0.27, 0.35, 0.55)},
+		{"pos": Vector2(430, -470), "size": Vector2(210, 150), "roof": Color(0.35, 0.47, 0.31)},
+		{"pos": Vector2(560, -70), "size": Vector2(205, 150), "roof": Color(0.69, 0.43, 0.22)},
+		{"pos": Vector2(-770, -60), "size": Vector2(210, 150), "roof": Color(0.31, 0.47, 0.47)},
+		{"pos": Vector2(190, 350), "size": Vector2(235, 165), "roof": Color(0.47, 0.31, 0.51)},
+	]
+	var plaza := [
+		Vector3(-200, -120, 320), Vector3(120, -130, 320), Vector3(-220, 140, 320), Vector3(160, 150, 320),
+		Vector3(-30, 0, 400), Vector3(-330, 10, 300), Vector3(330, 20, 300), Vector3(0, -230, 310), Vector3(0, 230, 310)
+	]
+	for v in plaza:
+		dirt_spots.append({"pos": Vector2(v.x, v.y), "size": Vector2(v.z, v.z)})
+	var yy := -300
+	while yy > -1050:
+		dirt_spots.append({"pos": Vector2(0, yy), "size": Vector2(200, 200)})
+		yy -= 95
+	var xx := 300
+	while xx < 1050:
+		dirt_spots.append({"pos": Vector2(xx, 0), "size": Vector2(200, 200)})
+		xx += 95
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 12345
+	for i in range(40):
+		var wx := rng.randf_range(-2400, 2400)
+		var wy := rng.randf_range(-2400, 2400)
+		if absf(wx) < 420 and absf(wy) < 320:
+			continue
+		var s := rng.randf_range(220, 440)
+		var tex: Texture2D = patch_gmid if rng.randf() < 0.5 else patch_gdark
+		grass_var.append({"pos": Vector2(wx, wy), "size": Vector2(s, s), "tex": tex})
+	for h in houses:
+		var sb := StaticBody2D.new()
+		var cs := CollisionShape2D.new()
+		var rs := RectangleShape2D.new()
+		rs.size = h.size
+		cs.shape = rs
+		cs.position = h.pos + h.size * 0.5
+		sb.add_child(cs)
+		add_child(sb)
 
 
 func _make_orb() -> Texture2D:
@@ -145,6 +191,7 @@ func _create_player() -> void:
 		sprite.flip_h = true
 		var h := float(sprite.texture.get_height()) * sprite.scale.y
 		sprite.position = Vector2(0, -h / 2.0)
+		sprite.z_index = 5
 		player.add_child(sprite)
 	else:
 		var ph := Polygon2D.new()
@@ -297,6 +344,7 @@ func _spawn_projectile() -> void:
 	var orb := Sprite2D.new()
 	orb.texture = orb_tex
 	orb.scale = Vector2(0.55, 0.55)
+	orb.z_index = 6
 	orb.position = player.position + dir * 34.0 + Vector2(0, -54)
 	add_child(orb)
 	projectiles.append({"node": orb, "vel": dir * SPELL_SPEED, "life": 1.5})
@@ -377,11 +425,39 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _draw() -> void:
+	# sol herbe
 	if ground_tex != null:
 		draw_texture_rect(ground_tex, Rect2(-WORLD_HALF, -WORLD_HALF, WORLD_HALF * 2, WORLD_HALF * 2), true)
 	else:
 		draw_rect(Rect2(-WORLD_HALF, -WORLD_HALF, WORLD_HALF * 2, WORLD_HALF * 2), Color(0.20, 0.28, 0.20))
-	var spots := [Vector2(300, -220), Vector2(-520, 280), Vector2(640, 480), Vector2(-320, -600)]
-	var cols := [Color(0.55, 0.40, 0.30), Color(0.40, 0.50, 0.60), Color(0.52, 0.46, 0.56), Color(0.46, 0.56, 0.42)]
-	for i in spots.size():
-		draw_rect(Rect2(spots[i], Vector2(160, 140)), cols[i])
+	# variation d'herbe
+	for g in grass_var:
+		if g.tex != null:
+			draw_texture_rect(g.tex, Rect2(g.pos - g.size * 0.5, g.size), false)
+	# terre (place + chemins)
+	if patch_dirt != null:
+		for d in dirt_spots:
+			draw_texture_rect(patch_dirt, Rect2(d.pos - d.size * 0.5, d.size), false)
+	# maisons
+	for h in houses:
+		_draw_house(h)
+
+
+func _draw_house(h: Dictionary) -> void:
+	var pos: Vector2 = h.pos
+	var sz: Vector2 = h.size
+	var body := Color(0.80, 0.70, 0.55)
+	draw_rect(Rect2(pos, sz), body)
+	draw_rect(Rect2(pos, sz), Color(0.47, 0.37, 0.27), false, 3.0)
+	var rh := sz.y * 0.55
+	var roof_pts := PackedVector2Array([
+		pos + Vector2(-sz.x * 0.12, 0), pos + Vector2(sz.x * 1.12, 0),
+		pos + Vector2(sz.x * 0.78, -rh), pos + Vector2(sz.x * 0.22, -rh)])
+	draw_colored_polygon(roof_pts, h.roof)
+	var dw := sz.x * 0.26
+	var dh := sz.y * 0.5
+	draw_rect(Rect2(pos + Vector2(sz.x * 0.5 - dw * 0.5, sz.y - dh), Vector2(dw, dh)), Color(0.27, 0.19, 0.13))
+	var ww := sz.x * 0.2
+	var wyf := sz.y * 0.22
+	draw_rect(Rect2(pos + Vector2(sz.x * 0.12, wyf), Vector2(ww, ww * 0.8)), Color(0.88, 0.92, 0.59))
+	draw_rect(Rect2(pos + Vector2(sz.x * 0.68, wyf), Vector2(ww, ww * 0.8)), Color(0.88, 0.92, 0.59))
