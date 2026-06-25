@@ -16,6 +16,7 @@ const DIRS8: Array = ["right", "down_right", "down", "down_left", "left", "up_le
 
 var player: CharacterBody2D
 var sprite: Sprite2D
+var ground_tex: Texture2D
 var idle_tex: Dictionary = {}     # direction -> Texture2D
 var move_tex: Dictionary = {}     # direction -> Array de Texture2D
 var facing: String = "down"
@@ -27,7 +28,9 @@ var touch_current: Vector2 = Vector2.ZERO
 
 
 func _ready() -> void:
+	texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
 	_load_textures()
+	_load_ground()
 	_create_player()
 	_create_hud()
 	queue_redraw()
@@ -46,6 +49,12 @@ func _load_textures() -> void:
 				frames.append(load(p))
 		if frames.size() > 0:
 			move_tex[d] = frames
+
+
+func _load_ground() -> void:
+	var p := "res://assets/tilesets/tile_grass_light.png"
+	if ResourceLoader.exists(p):
+		ground_tex = load(p)
 
 
 func dir8_from(v: Vector2) -> String:
@@ -137,16 +146,10 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _draw() -> void:
-	draw_rect(Rect2(-WORLD_HALF, -WORLD_HALF, WORLD_HALF * 2, WORLD_HALF * 2), Color(0.20, 0.28, 0.20))
-	var line_col := Color(1, 1, 1, 0.06)
-	var x := -WORLD_HALF
-	while x <= WORLD_HALF:
-		draw_line(Vector2(x, -WORLD_HALF), Vector2(x, WORLD_HALF), line_col)
-		x += GRID
-	var y := -WORLD_HALF
-	while y <= WORLD_HALF:
-		draw_line(Vector2(-WORLD_HALF, y), Vector2(WORLD_HALF, y), line_col)
-		y += GRID
+	if ground_tex != null:
+		draw_texture_rect(ground_tex, Rect2(-WORLD_HALF, -WORLD_HALF, WORLD_HALF * 2, WORLD_HALF * 2), true)
+	else:
+		draw_rect(Rect2(-WORLD_HALF, -WORLD_HALF, WORLD_HALF * 2, WORLD_HALF * 2), Color(0.20, 0.28, 0.20))
 	var spots := [Vector2(300, -220), Vector2(-520, 280), Vector2(640, 480), Vector2(-320, -600)]
 	var cols := [Color(0.55, 0.40, 0.30), Color(0.40, 0.50, 0.60), Color(0.52, 0.46, 0.56), Color(0.46, 0.56, 0.42)]
 	for i in spots.size():
