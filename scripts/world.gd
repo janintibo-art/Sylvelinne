@@ -1,7 +1,8 @@
 extends Node2D
 
 # =====================================================================
-#  Sylvelinne — Aëla : monde + village + INTERIEURS
+#  Sylvelinne — Aëla
+#  Monde + village + INTERIEUR PRATICABLE & INTERACTIF + VENT
 # =====================================================================
 
 const PLAYER_SPEED: float = 240.0
@@ -11,11 +12,9 @@ const SPELL_SPEED: float = 520.0
 const CAM_ZOOM: float = 3.0
 const WORLD_HALF: int = 3000
 
-# Interieur : une "pièce" placée loin dans le monde, avec sa propre caméra fixe
+# Interieur : pièce construite, placée loin, caméra fixe
 const INTERIOR_CENTER: Vector2 = Vector2(10000.0, 0.0)
-const ROOM_H: float = 330.0
-const WALK_OFFSET: Vector2 = Vector2(0, 95)     # centre de la zone marchable (sol)
-const WALK_HALF: Vector2 = Vector2(100, 45)     # demi-taille de la zone marchable
+const ROOM_HALF: Vector2 = Vector2(300.0, 170.0)   # demi-taille du sol
 
 const DIRS8: Array = ["right", "down_right", "down", "down_left", "left", "up_left", "up", "up_right"]
 const DIR_VEC: Dictionary = {
@@ -24,17 +23,10 @@ const DIR_VEC: Dictionary = {
 	"up": Vector2(0, -1), "up_right": Vector2(0.7071, -0.7071)
 }
 
-const ITEMS: Array = [
+const START_ITEMS: Array = [
 	{"icon": "epee", "name": "Épée", "qty": 1}, {"icon": "arc", "name": "Arc", "qty": 1},
-	{"icon": "carquois", "name": "Carquois", "qty": 1}, {"icon": "bouclier", "name": "Bouclier", "qty": 1},
-	{"icon": "sac", "name": "Sac à dos", "qty": 1}, {"icon": "potion_soin", "name": "Potion de soin", "qty": 2},
-	{"icon": "potion_mana", "name": "Potion de mana", "qty": 1}, {"icon": "bourse", "name": "Bourse", "qty": 1},
-	{"icon": "cristal", "name": "Cristal", "qty": 3}, {"icon": "grimoire", "name": "Grimoire", "qty": 1},
-	{"icon": "torche", "name": "Torche", "qty": 2}, {"icon": "corde", "name": "Corde", "qty": 1},
-	{"icon": "piege", "name": "Piège", "qty": 2}, {"icon": "herbes", "name": "Herbes", "qty": 4},
-	{"icon": "pain", "name": "Pain", "qty": 3}, {"icon": "pomme", "name": "Pomme", "qty": 2},
-	{"icon": "coffre", "name": "Coffre", "qty": 1}, {"icon": "cle", "name": "Clé", "qty": 1},
-	{"icon": "lanterne", "name": "Lanterne", "qty": 1}, {"icon": "tapis", "name": "Tapis de couchage", "qty": 1},
+	{"icon": "bouclier", "name": "Bouclier", "qty": 1}, {"icon": "potion_soin", "name": "Potion de soin", "qty": 2},
+	{"icon": "grimoire", "name": "Grimoire", "qty": 1}, {"icon": "pain", "name": "Pain", "qty": 3},
 ]
 
 const PROPS: Array = [
@@ -54,6 +46,8 @@ var ysort: Node2D
 var cam_outside: Camera2D
 var cam_inside: Camera2D
 var ground_tex: Texture2D
+var floor_tex: Texture2D
+var wall_tex: Texture2D
 var idle_tex: Dictionary = {}
 var move_tex: Dictionary = {}
 var cast_tex: Dictionary = {}
@@ -64,6 +58,7 @@ var patch_gmid: Texture2D
 var patch_gdark: Texture2D
 var grass_var: Array = []
 var dirt_spots: Array = []
+var sway_sprites: Array = []
 
 var facing: String = "down"
 var moving: bool = false
@@ -74,12 +69,23 @@ var cast_t: float = 0.0
 var cast_fired: bool = false
 var projectiles: Array = []
 
+var bag: Array = []
 var inv_root: Control
+var inv_grid: GridContainer
 var enter_btn: Button
 var exit_btn: Button
+var act_btn: Button
+var toast_label: Label
+var toast_t: float = 0.0
+
 var inside: bool = false
 var near_house: int = -1
 var return_pos: Vector2 = Vector2.ZERO
+var interactives: Array = []
+var near_interact: int = -1
+
+var wind_phase: float = 0.0
+var wind_str: float = 0.6
 
 var touch_active: bool = false
 var touch_origin: Vector2 = Vector2.ZERO
@@ -91,6 +97,8 @@ func _ready() -> void:
 	_load_textures()
 	_load_ground()
 	orb_tex = _make_orb()
+	for it in START_ITEMS:
+		bag.append({"icon": it.icon, "name": it.name, "qty": it.qty})
 	_build_ground_deco()
 	ysort = Node2D.new()
 	ysort.y_sort_enabled = true
@@ -100,6 +108,7 @@ func _ready() -> void:
 	_build_interior()
 	_create_hud()
 	_create_inventory()
+	_create_petals()
 	queue_redraw()
 
 
@@ -132,6 +141,10 @@ func _load_ground() -> void:
 		patch_gmid = load("res://assets/tilesets/patch_grass_mid.png")
 	if ResourceLoader.exists("res://assets/tilesets/patch_grass_dark.png"):
 		patch_gdark = load("res://assets/tilesets/patch_grass_dark.png")
+	if ResourceLoader.exists("res://assets/interiors/wood_floor.png"):
+		floor_tex = load("res://assets/interiors/wood_floor.png")
+	if ResourceLoader.exists("res://assets/interiors/wall.png"):
+		wall_tex = load("res://assets/interiors/wall.png")
 
 
 func _build_ground_deco() -> void:
@@ -151,12 +164,12 @@ func _build_ground_deco() -> void:
 		xx += 95
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 12345
-	for i in range(40):
+	for i in range(36):
 		var wx := rng.randf_range(-2400, 2400)
 		var wy := rng.randf_range(-2400, 2400)
 		if absf(wx) < 420 and absf(wy) < 320:
 			continue
-		var s := rng.randf_range(220, 440)
+		var s := rng.randf_range(220, 420)
 		var tex: Texture2D = patch_gmid if rng.randf() < 0.5 else patch_gdark
 		grass_var.append({"pos": Vector2(wx, wy), "size": Vector2(s, s), "tex": tex})
 
@@ -175,27 +188,81 @@ func _spawn_props() -> void:
 		spr.position = pr.pos
 		ysort.add_child(spr)
 		_add_collision(pr.pos + Vector2(0, -pr.foot.y / 2.0), pr.foot)
+		if String(pr.tex).contains("arbre"):
+			sway_sprites.append({"spr": spr, "ph": randf() * TAU})
 
 
+# ---------------- INTERIEUR CONSTRUIT ----------------
 func _build_interior() -> void:
-	var path := "res://assets/interiors/cabinet.png"
-	if ResourceLoader.exists(path):
-		var tex: Texture2D = load(path)
-		var spr := Sprite2D.new()
-		spr.texture = tex
-		var s: float = ROOM_H / float(tex.get_height())
-		spr.scale = Vector2(s, s)
-		spr.position = INTERIOR_CENTER
-		ysort.add_child(spr)
-	var c := INTERIOR_CENTER + WALK_OFFSET
-	_add_collision(c + Vector2(0, -WALK_HALF.y), Vector2(WALK_HALF.x * 2.0, 12))
-	_add_collision(c + Vector2(0, WALK_HALF.y), Vector2(WALK_HALF.x * 2.0, 12))
-	_add_collision(c + Vector2(-WALK_HALF.x, 0), Vector2(12, WALK_HALF.y * 2.0))
-	_add_collision(c + Vector2(WALK_HALF.x, 0), Vector2(12, WALK_HALF.y * 2.0))
+	var ic := INTERIOR_CENTER
+	# tapis (sous tout, z=-1)
+	_add_furni("tapis", Vector2(0, 30), 135.0, false, Vector2.ZERO, -1)
+	# meubles (avec collision)
+	_add_furni("lit", Vector2(-190, -90), 132.0, true, Vector2(112, 38))
+	_add_furni("commode", Vector2(-50, -135), 108.0, true, Vector2(92, 28))
+	_add_furni("biblio", Vector2(55, -138), 150.0, true, Vector2(72, 26))
+	_add_furni("armoire", Vector2(210, -100), 150.0, true, Vector2(72, 28))
+	_add_furni("bureau", Vector2(215, 20), 122.0, true, Vector2(92, 32))
+	_add_furni("table", Vector2(0, 55), 104.0, true, Vector2(92, 36))
+	_add_furni("tabouret", Vector2(0, 102), 76.0, true, Vector2(42, 22))
+	_add_furni("fauteuil", Vector2(205, 105), 118.0, true, Vector2(78, 34))
+	# coffre interactif
+	_add_interactive("chest", "furniture/coffre", Vector2(-205, 100), 114.0, true, Vector2(78, 32),
+		[{"icon": "cristal", "name": "Cristal", "qty": 2}, {"icon": "bourse", "name": "Bourse d'or", "qty": 1}])
+	# objets à ramasser (icônes propres)
+	_add_interactive("item", "items/potion_soin", Vector2(140, 35), 30.0, false, Vector2.ZERO,
+		[{"icon": "potion_soin", "name": "Potion de soin", "qty": 1}])
+	_add_interactive("item", "items/cristal", Vector2(-35, 22), 26.0, false, Vector2.ZERO,
+		[{"icon": "cristal", "name": "Cristal", "qty": 1}])
+	_add_interactive("item", "items/pomme", Vector2(70, 78), 26.0, false, Vector2.ZERO,
+		[{"icon": "pomme", "name": "Pomme", "qty": 1}])
+	_add_interactive("item", "items/cle", Vector2(-130, -28), 26.0, false, Vector2.ZERO,
+		[{"icon": "cle", "name": "Clé", "qty": 1}])
+	# murs (limite du sol)
+	_add_collision(ic + Vector2(0, -ROOM_HALF.y), Vector2(ROOM_HALF.x * 2.0 + 12, 12))
+	_add_collision(ic + Vector2(0, ROOM_HALF.y), Vector2(ROOM_HALF.x * 2.0 + 12, 12))
+	_add_collision(ic + Vector2(-ROOM_HALF.x, 0), Vector2(12, ROOM_HALF.y * 2.0))
+	_add_collision(ic + Vector2(ROOM_HALF.x, 0), Vector2(12, ROOM_HALF.y * 2.0))
+	# caméra intérieure fixe
 	cam_inside = Camera2D.new()
 	cam_inside.zoom = Vector2(CAM_ZOOM, CAM_ZOOM)
-	cam_inside.position = INTERIOR_CENTER
+	cam_inside.position = ic
 	add_child(cam_inside)
+	_create_dust()
+
+
+func _add_furni(name: String, rel: Vector2, h: float, collide: bool, foot: Vector2, z: int = 0) -> void:
+	var path := "res://assets/furniture/%s.png" % name
+	if not ResourceLoader.exists(path):
+		return
+	var tex: Texture2D = load(path)
+	var spr := Sprite2D.new()
+	spr.texture = tex
+	var s: float = h / float(tex.get_height())
+	spr.scale = Vector2(s, s)
+	spr.offset = Vector2(0, -tex.get_height() / 2.0)
+	spr.position = INTERIOR_CENTER + rel
+	spr.z_index = z
+	ysort.add_child(spr)
+	if collide:
+		_add_collision(INTERIOR_CENTER + rel + Vector2(0, -foot.y / 2.0), foot)
+
+
+func _add_interactive(type: String, tex_path: String, rel: Vector2, h: float, collide: bool, foot: Vector2, loot: Array) -> void:
+	var path := "res://assets/%s.png" % tex_path
+	if not ResourceLoader.exists(path):
+		return
+	var tex: Texture2D = load(path)
+	var spr := Sprite2D.new()
+	spr.texture = tex
+	var s: float = h / float(tex.get_height())
+	spr.scale = Vector2(s, s)
+	spr.offset = Vector2(0, -tex.get_height() / 2.0)
+	spr.position = INTERIOR_CENTER + rel
+	ysort.add_child(spr)
+	if collide:
+		_add_collision(INTERIOR_CENTER + rel + Vector2(0, -foot.y / 2.0), foot)
+	interactives.append({"type": type, "pos": INTERIOR_CENTER + rel, "spr": spr, "loot": loot, "taken": false})
 
 
 func _add_collision(pos: Vector2, size: Vector2) -> void:
@@ -238,9 +305,9 @@ func _create_player() -> void:
 
 	var col := CollisionShape2D.new()
 	var shape := RectangleShape2D.new()
-	shape.size = Vector2(34, 24)
+	shape.size = Vector2(34, 22)
 	col.shape = shape
-	col.position = Vector2(0, -12)
+	col.position = Vector2(0, -11)
 	player.add_child(col)
 
 	if idle_tex.has("down"):
@@ -263,6 +330,54 @@ func _create_player() -> void:
 	cam_outside.zoom = Vector2(CAM_ZOOM, CAM_ZOOM)
 	player.add_child(cam_outside)
 	cam_outside.make_current()
+
+
+func _create_petals() -> void:
+	if not ResourceLoader.exists("res://assets/vfx/petal.png"):
+		return
+	var pet := CPUParticles2D.new()
+	pet.texture = load("res://assets/vfx/petal.png")
+	pet.amount = 22
+	pet.lifetime = 8.0
+	pet.preprocess = 4.0
+	pet.local_coords = false
+	pet.emission_shape = CPUParticles2D.EMISSION_SHAPE_RECTANGLE
+	pet.emission_rect_extents = Vector2(360, 18)
+	pet.position = Vector2(0, -200)
+	pet.direction = Vector2(0.5, 1)
+	pet.spread = 35.0
+	pet.gravity = Vector2(7, 16)
+	pet.initial_velocity_min = 12.0
+	pet.initial_velocity_max = 34.0
+	pet.angular_velocity_min = -70.0
+	pet.angular_velocity_max = 70.0
+	pet.scale_amount_min = 0.3
+	pet.scale_amount_max = 0.7
+	pet.color = Color(1, 1, 1, 0.85)
+	cam_outside.add_child(pet)
+
+
+func _create_dust() -> void:
+	if not ResourceLoader.exists("res://assets/vfx/dust.png"):
+		return
+	var d := CPUParticles2D.new()
+	d.texture = load("res://assets/vfx/dust.png")
+	d.amount = 16
+	d.lifetime = 6.0
+	d.preprocess = 3.0
+	d.local_coords = false
+	d.emission_shape = CPUParticles2D.EMISSION_SHAPE_RECTANGLE
+	d.emission_rect_extents = Vector2(290, 165)
+	d.position = INTERIOR_CENTER
+	d.direction = Vector2(0, -1)
+	d.spread = 60.0
+	d.gravity = Vector2(2, -4)
+	d.initial_velocity_min = 3.0
+	d.initial_velocity_max = 9.0
+	d.scale_amount_min = 0.4
+	d.scale_amount_max = 1.0
+	d.color = Color(1, 1, 0.92, 0.45)
+	cam_inside.add_child(d)
 
 
 func _create_hud() -> void:
@@ -302,13 +417,29 @@ func _create_hud() -> void:
 	layer.add_child(enter_btn)
 
 	exit_btn = Button.new()
-	exit_btn.text = "Sortir"
-	exit_btn.add_theme_font_size_override("font_size", 44)
-	exit_btn.size = Vector2(280, 120)
-	exit_btn.position = Vector2(820, 900)
+	exit_btn.text = "🚪 Sortir"
+	exit_btn.add_theme_font_size_override("font_size", 40)
+	exit_btn.size = Vector2(260, 110)
+	exit_btn.position = Vector2(60, 900)
 	exit_btn.visible = false
 	exit_btn.pressed.connect(_on_exit)
 	layer.add_child(exit_btn)
+
+	act_btn = Button.new()
+	act_btn.text = "Ramasser"
+	act_btn.add_theme_font_size_override("font_size", 44)
+	act_btn.size = Vector2(300, 120)
+	act_btn.position = Vector2(810, 900)
+	act_btn.visible = false
+	act_btn.pressed.connect(_on_act)
+	layer.add_child(act_btn)
+
+	toast_label = Label.new()
+	toast_label.add_theme_font_size_override("font_size", 46)
+	toast_label.modulate = Color(1, 1, 0.6)
+	toast_label.position = Vector2(660, 150)
+	toast_label.visible = false
+	layer.add_child(toast_label)
 
 
 func _create_inventory() -> void:
@@ -355,20 +486,24 @@ func _create_inventory() -> void:
 	scroll.custom_minimum_size = Vector2(1420, 640)
 	vb.add_child(scroll)
 
-	var grid := GridContainer.new()
-	grid.columns = 6
-	grid.add_theme_constant_override("h_separation", 16)
-	grid.add_theme_constant_override("v_separation", 16)
-	scroll.add_child(grid)
-
-	for item in ITEMS:
-		grid.add_child(_make_slot(item))
+	inv_grid = GridContainer.new()
+	inv_grid.columns = 6
+	inv_grid.add_theme_constant_override("h_separation", 16)
+	inv_grid.add_theme_constant_override("v_separation", 16)
+	scroll.add_child(inv_grid)
 
 	var close_btn := Button.new()
 	close_btn.text = "Fermer"
 	close_btn.add_theme_font_size_override("font_size", 42)
 	close_btn.pressed.connect(_toggle_inventory)
 	vb.add_child(close_btn)
+
+
+func _refresh_inventory() -> void:
+	for c in inv_grid.get_children():
+		c.queue_free()
+	for item in bag:
+		inv_grid.add_child(_make_slot(item))
 
 
 func _make_slot(item: Dictionary) -> Control:
@@ -401,7 +536,25 @@ func _make_slot(item: Dictionary) -> Control:
 
 
 func _toggle_inventory() -> void:
-	inv_root.visible = not inv_root.visible
+	var willshow := not inv_root.visible
+	if willshow:
+		_refresh_inventory()
+	inv_root.visible = willshow
+
+
+func _add_to_bag(icon: String, name: String, qty: int) -> void:
+	for item in bag:
+		if item.name == name:
+			item.qty += qty
+			return
+	bag.append({"icon": icon, "name": name, "qty": qty})
+
+
+func _show_toast(msg: String) -> void:
+	toast_label.text = msg
+	toast_label.modulate.a = 1.0
+	toast_t = 1.8
+	toast_label.visible = true
 
 
 func _on_enter() -> void:
@@ -409,9 +562,9 @@ func _on_enter() -> void:
 		return
 	inside = true
 	return_pos = PROPS[near_house].pos + Vector2(0, 60)
-	player.position = INTERIOR_CENTER + WALK_OFFSET
+	player.position = INTERIOR_CENTER + Vector2(0, 128)
 	player.velocity = Vector2.ZERO
-	facing = "down"
+	facing = "up"
 	cam_inside.make_current()
 	enter_btn.visible = false
 	exit_btn.visible = true
@@ -426,6 +579,27 @@ func _on_exit() -> void:
 	facing = "down"
 	cam_outside.make_current()
 	exit_btn.visible = false
+	act_btn.visible = false
+
+
+func _on_act() -> void:
+	if near_interact < 0:
+		return
+	var o: Dictionary = interactives[near_interact]
+	if o.taken:
+		return
+	o.taken = true
+	var msg := ""
+	for l in o.loot:
+		_add_to_bag(l.icon, l.name, l.qty)
+		msg += "+%d %s   " % [l.qty, l.name]
+	_show_toast(msg)
+	if o.type == "item":
+		o.spr.visible = false
+	else:
+		o.spr.modulate = Color(0.72, 0.72, 0.72)
+	act_btn.visible = false
+	near_interact = -1
 
 
 func _on_cast() -> void:
@@ -470,13 +644,43 @@ func _physics_process(_delta: float) -> void:
 
 
 func _process(delta: float) -> void:
-	if not inside:
+	# vent (force variable, douce)
+	wind_phase += delta
+	wind_str = 0.55 + 0.28 * sin(wind_phase * 0.6) + 0.14 * sin(wind_phase * 1.7 + 1.0)
+	for sw in sway_sprites:
+		sw.spr.rotation = sin(wind_phase * 1.6 + sw.ph) * wind_str * 0.025
+
+	# toast (fondu)
+	if toast_t > 0.0:
+		toast_t -= delta
+		if toast_t < 0.6:
+			toast_label.modulate.a = clampf(toast_t / 0.6, 0.0, 1.0)
+		if toast_t <= 0.0:
+			toast_label.visible = false
+
+	# proximité contextuelle
+	var inv_open := inv_root != null and inv_root.visible
+	if inside:
+		near_interact = -1
+		for i in range(interactives.size()):
+			var o: Dictionary = interactives[i]
+			if o.taken:
+				continue
+			if player.position.distance_to(o.pos) < 64.0:
+				near_interact = i
+				break
+		if near_interact >= 0 and not inv_open:
+			act_btn.text = "Ouvrir" if interactives[near_interact].type == "chest" else "Ramasser"
+			act_btn.visible = true
+		else:
+			act_btn.visible = false
+	else:
 		near_house = -1
 		for i in range(4):
 			if player.position.distance_to(PROPS[i].pos) < 150.0:
 				near_house = i
 				break
-		enter_btn.visible = (near_house >= 0) and not (inv_root != null and inv_root.visible)
+		enter_btn.visible = (near_house >= 0) and not inv_open
 
 	_update_projectiles(delta)
 	if sprite == null:
@@ -533,9 +737,21 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _draw() -> void:
-	# fond sombre de l'intérieur (autour de la pièce)
-	draw_rect(Rect2(INTERIOR_CENTER - Vector2(700, 460), Vector2(1400, 920)), Color(0.10, 0.09, 0.15))
-	# sol exterieur (herbe)
+	# --- INTERIEUR (loin) : fond + murs + sol ---
+	var ic := INTERIOR_CENTER
+	draw_rect(Rect2(ic + Vector2(-720, -480), Vector2(1440, 960)), Color(0.09, 0.08, 0.13))
+	if wall_tex != null:
+		draw_texture_rect(wall_tex, Rect2(ic + Vector2(-ROOM_HALF.x - 16, -ROOM_HALF.y - 46), Vector2(ROOM_HALF.x * 2 + 32, ROOM_HALF.y * 2 + 62)), true)
+	else:
+		draw_rect(Rect2(ic + Vector2(-ROOM_HALF.x - 16, -ROOM_HALF.y - 46), Vector2(ROOM_HALF.x * 2 + 32, ROOM_HALF.y * 2 + 62)), Color(0.5, 0.45, 0.39))
+	if floor_tex != null:
+		draw_texture_rect(floor_tex, Rect2(ic - ROOM_HALF, ROOM_HALF * 2), true)
+	else:
+		draw_rect(Rect2(ic - ROOM_HALF, ROOM_HALF * 2), Color(0.48, 0.33, 0.20))
+	draw_rect(Rect2(ic + Vector2(-ROOM_HALF.x, -ROOM_HALF.y), Vector2(ROOM_HALF.x * 2, 10)), Color(0, 0, 0, 0.18))
+	draw_rect(Rect2(ic + Vector2(-46, ROOM_HALF.y - 6), Vector2(92, 22)), Color(0.16, 0.11, 0.07))
+
+	# --- EXTERIEUR : herbe + variations + terre ---
 	if ground_tex != null:
 		draw_texture_rect(ground_tex, Rect2(-WORLD_HALF, -WORLD_HALF, WORLD_HALF * 2, WORLD_HALF * 2), true)
 	else:
