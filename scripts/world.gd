@@ -38,7 +38,7 @@ const PROPS: Array = [
 
 # 4 pièces (1 par maison, même ordre que PROPS[0..3])
 const ROOM_CENTERS: Array = [Vector2(10000, 0), Vector2(12600, 0), Vector2(15200, 0), Vector2(17800, 0)]
-const ROOM_HALVES: Array = [Vector2(300, 170), Vector2(560, 360), Vector2(300, 180), Vector2(620, 400)]
+const ROOM_HALVES: Array = [Vector2(300, 170), Vector2(560, 360), Vector2(440, 280), Vector2(620, 400)]
 const ROOM_FLOORTINT: Array = [Color(1, 1, 1), Color(0.9, 0.86, 0.82), Color(1.06, 0.98, 0.9), Color(1.1, 0.99, 0.85)]
 const ROOM_WALLTINT: Array = [Color(1, 1, 1), Color(0.86, 0.86, 0.94), Color(1.02, 0.98, 0.96), Color(1.04, 0.96, 0.86)]
 
@@ -207,7 +207,7 @@ func _build_interiors() -> void:
 		_add_collision(c + Vector2(hf.x, 0), Vector2(12, hf.y * 2))
 	_build_chambre(ROOM_CENTERS[0])
 	_build_biblio(ROOM_CENTERS[1])
-	_build_salon(ROOM_CENTERS[2])
+	_build_shop(ROOM_CENTERS[2])
 	_build_auberge(ROOM_CENTERS[3])
 
 
@@ -249,19 +249,26 @@ func _build_biblio(c: Vector2) -> void:
 	_inter(c, "item", "items/potion_mana", Vector2(-500, -100), 28, false, Vector2.ZERO, [{"icon": "potion_mana", "name": "Potion de mana", "qty": 1}])
 
 
-func _build_salon(c: Vector2) -> void:
-	_furni(c, "tapis", Vector2(0, 45), 150, false, Vector2.ZERO, -1)
-	_furni(c, "fauteuil", Vector2(-150, 35), 120, true, Vector2(76, 34))
-	_furni(c, "fauteuil", Vector2(150, 35), 120, true, Vector2(76, 34))
-	_furni(c, "table", Vector2(0, 65), 100, true, Vector2(90, 34))
-	_furni(c, "biblio", Vector2(-205, -145), 150, true, Vector2(72, 26))
-	_furni(c, "biblio", Vector2(60, -148), 150, true, Vector2(72, 26))
-	_furni(c, "commode", Vector2(170, -140), 110, true, Vector2(92, 28))
-	_inter(c, "chest", "furniture/coffre", Vector2(205, 110), 114, true, Vector2(78, 32),
-		[{"icon": "bourse", "name": "Bourse d'or", "qty": 1}, {"icon": "potion_soin", "name": "Potion de soin", "qty": 1}])
-	_inter(c, "item", "items/potion_soin", Vector2(-60, 85), 28, false, Vector2.ZERO, [{"icon": "potion_soin", "name": "Potion de soin", "qty": 1}])
-	_inter(c, "item", "items/pomme", Vector2(60, 90), 26, false, Vector2.ZERO, [{"icon": "pomme", "name": "Pomme", "qty": 1}])
-	_inter(c, "item", "items/cle", Vector2(-180, -30), 26, false, Vector2.ZERO, [{"icon": "cle", "name": "Clé", "qty": 1}])
+func _build_shop(c: Vector2) -> void:
+	_furni(c, "shop_etag_apoth", Vector2(-330, -250), 150, true, Vector2(80, 26))
+	_furni(c, "shop_etag_potions", Vector2(-170, -252), 150, true, Vector2(80, 26))
+	_furni(c, "shop_etag_biens", Vector2(10, -252), 150, true, Vector2(80, 26))
+	_furni(c, "shop_etag_pain", Vector2(180, -250), 150, true, Vector2(80, 26))
+	_furni(c, "shop_etal_produce", Vector2(330, -245), 130, true, Vector2(90, 30))
+	_furni(c, "shop_mannequin", Vector2(-400, -90), 140, true, Vector2(50, 26))
+	_furni(c, "shop_portant", Vector2(-400, 90), 140, true, Vector2(80, 28))
+	_furni(c, "shop_jouets", Vector2(400, -90), 140, true, Vector2(80, 28))
+	_furni(c, "shop_bonsai", Vector2(400, 100), 120, true, Vector2(50, 24))
+	_furni(c, "shop_ardoise", Vector2(-380, 205), 120, true, Vector2(50, 22))
+	_furni(c, "shop_vitrine", Vector2(-200, 40), 100, true, Vector2(110, 32))
+	_furni(c, "shop_comptoir", Vector2(0, 120), 120, true, Vector2(150, 40))
+	_inter(c, "chest", "furniture/shop_coffre_mag", Vector2(350, -180), 120, true, Vector2(80, 32),
+		[{"icon": "bourse", "name": "Bourse d'or", "qty": 3}, {"icon": "cristal", "name": "Cristal", "qty": 2}])
+	_inter(c, "item", "items/potion_soin", Vector2(-200, 90), 30, false, Vector2.ZERO, [{"icon": "potion_soin", "name": "Potion de soin", "qty": 1}])
+	_inter(c, "item", "items/cristal", Vector2(-40, 150), 28, false, Vector2.ZERO, [{"icon": "cristal", "name": "Cristal", "qty": 1}])
+	_inter(c, "item", "items/pain", Vector2(180, -198), 28, false, Vector2.ZERO, [{"icon": "pain", "name": "Pain", "qty": 1}])
+	_inter(c, "item", "items/pomme", Vector2(330, -192), 28, false, Vector2.ZERO, [{"icon": "pomme", "name": "Pomme", "qty": 1}])
+	_inter(c, "item", "items/grimoire", Vector2(10, -198), 30, false, Vector2.ZERO, [{"icon": "grimoire", "name": "Grimoire", "qty": 1}])
 
 
 func _build_auberge(c: Vector2) -> void:
