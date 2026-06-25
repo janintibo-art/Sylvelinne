@@ -1,5 +1,7 @@
 extends Node2D
 
+const NpcBrainScript = preload("res://scripts/npc_brain.gd")
+
 # =====================================================================
 #  Sylvelinne — Aëla
 #  Monde + village + 4 INTERIEURS distincts (effet TARDIS) + VENT
@@ -87,6 +89,8 @@ var near_house: int = -1
 var return_pos: Vector2 = Vector2.ZERO
 var interactives: Array = []
 var near_interact: int = -1
+var vendor: Dictionary = {}
+var vendor_event: String = ""
 
 var wind_phase: float = 0.0
 var wind_str: float = 0.6
@@ -110,6 +114,7 @@ func _ready() -> void:
 	_create_player()
 	_spawn_props()
 	_build_interiors()
+	_create_vendor()
 	_create_hud()
 	_create_inventory()
 	_create_particles()
@@ -289,6 +294,68 @@ func _build_auberge(c: Vector2) -> void:
 	_inter(c, "item", "items/pomme", Vector2(-400, -130), 26, false, Vector2.ZERO, [{"icon": "pomme", "name": "Pomme", "qty": 1}])
 	_inter(c, "item", "items/potion_soin", Vector2(400, -130), 28, false, Vector2.ZERO, [{"icon": "potion_soin", "name": "Potion de soin", "qty": 1}])
 	_inter(c, "item", "items/bourse", Vector2(-560, 300), 28, false, Vector2.ZERO, [{"icon": "bourse", "name": "Bourse d'or", "qty": 1}])
+
+
+func _create_vendor() -> void:
+	var vpos := ROOM_CENTERS[2] + Vector2(0, 55)
+	var node := Node2D.new()
+	node.position = vpos
+	ysort.add_child(node)
+	var vis: Node2D
+	if ResourceLoader.exists("res://assets/characters/vendeuse.png"):
+		var spr := Sprite2D.new()
+		spr.texture = load("res://assets/characters/vendeuse.png")
+		var s: float = 120.0 / float(spr.texture.get_height())
+		spr.scale = Vector2(s, s)
+		spr.offset = Vector2(0, -spr.texture.get_height() / 2.0)
+		node.add_child(spr)
+		vis = spr
+	else:
+		vis = _placeholder_vendor()
+		node.add_child(vis)
+	var bubble := Label.new()
+	bubble.size = Vector2(360, 90)
+	bubble.position = Vector2(-180, -250)
+	bubble.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	bubble.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	bubble.add_theme_font_size_override("font_size", 20)
+	bubble.add_theme_color_override("font_color", Color(1, 1, 0.9))
+	bubble.add_theme_color_override("font_outline_color", Color(0, 0, 0))
+	bubble.add_theme_constant_override("outline_size", 6)
+	bubble.visible = false
+	node.add_child(bubble)
+	_add_collision(vpos + Vector2(0, -12), Vector2(44, 24))
+	var brain = NpcBrainScript.new()
+	vendor = {"node": node, "vis": vis, "bubble": bubble, "brain": brain, "pos": vpos, "t": 0.0}
+
+
+func _placeholder_vendor() -> Node2D:
+	var n := Node2D.new()
+	var body := Polygon2D.new()
+	body.polygon = PackedVector2Array([Vector2(-26, -90), Vector2(26, -90), Vector2(34, 0), Vector2(-34, 0)])
+	body.color = Color(0.45, 0.2, 0.55)
+	n.add_child(body)
+	var head := Polygon2D.new()
+	var pts := PackedVector2Array()
+	for i in range(16):
+		var a := TAU * i / 16.0
+		pts.append(Vector2(cos(a), sin(a)) * 20 + Vector2(0, -112))
+	head.polygon = pts
+	head.color = Color(0.92, 0.78, 0.62)
+	n.add_child(head)
+	var hat := Polygon2D.new()
+	hat.polygon = PackedVector2Array([Vector2(-28, -126), Vector2(28, -126), Vector2(0, -178)])
+	hat.color = Color(0.4, 0.18, 0.5)
+	n.add_child(hat)
+	var tag := Label.new()
+	tag.text = "Vendeuse (placeholder)"
+	tag.position = Vector2(-95, -208)
+	tag.add_theme_font_size_override("font_size", 15)
+	tag.add_theme_color_override("font_color", Color(1, 1, 0.8))
+	tag.add_theme_color_override("font_outline_color", Color(0, 0, 0))
+	tag.add_theme_constant_override("outline_size", 5)
+	n.add_child(tag)
+	return n
 
 
 func _furni(center: Vector2, name: String, rel: Vector2, h: float, collide: bool, foot: Vector2, z: int = 0) -> void:
@@ -674,6 +741,8 @@ func _on_act() -> void:
 	if o.taken:
 		return
 	o.taken = true
+	if inside and current_room == 2:
+		vendor_event = "buy" if o.type == "chest" else "pick"
 	var msg := ""
 	for l in o.loot:
 		_add_to_bag(l.icon, l.name, l.qty)
@@ -763,6 +832,28 @@ func _process(delta: float) -> void:
 				near_house = i
 				break
 		enter_btn.visible = (near_house >= 0) and not inv_open
+
+	if not vendor.is_empty():
+		if inside and current_room == 2:
+			var vd := player.position.distance_to(vendor.pos)
+			var pp := {"near": vd < 180.0, "dist": vd, "interacted": vendor_event != "", "event": (vendor_event if vendor_event != "" else "pick"), "dt": delta}
+			var res: Dictionary = vendor.brain.think(pp)
+			vendor_event = ""
+			if res.line != null:
+				vendor.bubble.text = res.line
+				vendor.bubble.visible = true
+				vendor.bubble.modulate.a = 1.0
+				vendor.t = 4.0
+			if vendor.vis is Sprite2D:
+				vendor.vis.flip_h = player.position.x > vendor.pos.x
+		else:
+			vendor.bubble.visible = false
+		if vendor.t > 0.0:
+			vendor.t -= delta
+			if vendor.t < 0.8:
+				vendor.bubble.modulate.a = clampf(vendor.t / 0.8, 0.0, 1.0)
+			if vendor.t <= 0.0:
+				vendor.bubble.visible = false
 
 	_update_projectiles(delta)
 	if sprite == null:
