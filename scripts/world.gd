@@ -2,7 +2,7 @@ extends Node2D
 
 # =====================================================================
 #  Sylvelinne — niveau de test (Aëla)
-#  Deplacement + idle + SORT + INVENTAIRE + VILLAGE decore
+#  Deplacement + idle + SORT + INVENTAIRE + VILLAGE (vrais batiments)
 # =====================================================================
 
 const PLAYER_SPEED: float = 240.0
@@ -32,8 +32,21 @@ const ITEMS: Array = [
 	{"icon": "lanterne", "name": "Lanterne", "qty": 1}, {"icon": "tapis", "name": "Tapis de couchage", "qty": 1},
 ]
 
+# batiments / nature : base au sol (pos), hauteur affichee (h), empreinte de collision (foot)
+const PROPS: Array = [
+	{"tex": "buildings/maison2", "pos": Vector2(-260, -360), "h": 380.0, "foot": Vector2(150, 40)},
+	{"tex": "buildings/maison3", "pos": Vector2(330, -340), "h": 380.0, "foot": Vector2(150, 40)},
+	{"tex": "buildings/maison1", "pos": Vector2(-560, -180), "h": 340.0, "foot": Vector2(180, 40)},
+	{"tex": "buildings/auberge", "pos": Vector2(560, -160), "h": 340.0, "foot": Vector2(180, 40)},
+	{"tex": "nature/arbre", "pos": Vector2(-820, 320), "h": 440.0, "foot": Vector2(70, 30)},
+	{"tex": "nature/rocher1", "pos": Vector2(560, 330), "h": 150.0, "foot": Vector2(130, 30)},
+	{"tex": "nature/rocher2", "pos": Vector2(170, 410), "h": 120.0, "foot": Vector2(90, 30)},
+	{"tex": "nature/rocher3", "pos": Vector2(-300, 450), "h": 150.0, "foot": Vector2(110, 30)},
+]
+
 var player: CharacterBody2D
 var sprite: Sprite2D
+var ysort: Node2D
 var ground_tex: Texture2D
 var idle_tex: Dictionary = {}
 var move_tex: Dictionary = {}
@@ -45,7 +58,6 @@ var patch_gmid: Texture2D
 var patch_gdark: Texture2D
 var grass_var: Array = []
 var dirt_spots: Array = []
-var houses: Array = []
 
 var facing: String = "down"
 var moving: bool = false
@@ -68,8 +80,12 @@ func _ready() -> void:
 	_load_textures()
 	_load_ground()
 	orb_tex = _make_orb()
-	_build_village()
+	_build_ground_deco()
+	ysort = Node2D.new()
+	ysort.y_sort_enabled = true
+	add_child(ysort)
 	_create_player()
+	_spawn_props()
 	_create_hud()
 	_create_inventory()
 	queue_redraw()
@@ -106,15 +122,7 @@ func _load_ground() -> void:
 		patch_gdark = load("res://assets/tilesets/patch_grass_dark.png")
 
 
-func _build_village() -> void:
-	houses = [
-		{"pos": Vector2(-600, -470), "size": Vector2(210, 150), "roof": Color(0.67, 0.27, 0.24)},
-		{"pos": Vector2(-120, -560), "size": Vector2(240, 165), "roof": Color(0.27, 0.35, 0.55)},
-		{"pos": Vector2(430, -470), "size": Vector2(210, 150), "roof": Color(0.35, 0.47, 0.31)},
-		{"pos": Vector2(560, -70), "size": Vector2(205, 150), "roof": Color(0.69, 0.43, 0.22)},
-		{"pos": Vector2(-770, -60), "size": Vector2(210, 150), "roof": Color(0.31, 0.47, 0.47)},
-		{"pos": Vector2(190, 350), "size": Vector2(235, 165), "roof": Color(0.47, 0.31, 0.51)},
-	]
+func _build_ground_deco() -> void:
 	var plaza := [
 		Vector3(-200, -120, 320), Vector3(120, -130, 320), Vector3(-220, 140, 320), Vector3(160, 150, 320),
 		Vector3(-30, 0, 400), Vector3(-330, 10, 300), Vector3(330, 20, 300), Vector3(0, -230, 310), Vector3(0, 230, 310)
@@ -139,13 +147,28 @@ func _build_village() -> void:
 		var s := rng.randf_range(220, 440)
 		var tex: Texture2D = patch_gmid if rng.randf() < 0.5 else patch_gdark
 		grass_var.append({"pos": Vector2(wx, wy), "size": Vector2(s, s), "tex": tex})
-	for h in houses:
+
+
+func _spawn_props() -> void:
+	for pr in PROPS:
+		var path := "res://assets/%s.png" % pr.tex
+		if not ResourceLoader.exists(path):
+			continue
+		var tex: Texture2D = load(path)
+		var spr := Sprite2D.new()
+		spr.texture = tex
+		var s: float = pr.h / float(tex.get_height())
+		spr.scale = Vector2(s, s)
+		spr.offset = Vector2(0, -tex.get_height() / 2.0)
+		spr.position = pr.pos
+		ysort.add_child(spr)
+
 		var sb := StaticBody2D.new()
 		var cs := CollisionShape2D.new()
 		var rs := RectangleShape2D.new()
-		rs.size = h.size
+		rs.size = pr.foot
 		cs.shape = rs
-		cs.position = h.pos + h.size * 0.5
+		cs.position = pr.pos + Vector2(0, -pr.foot.y / 2.0)
 		sb.add_child(cs)
 		add_child(sb)
 
@@ -175,7 +198,7 @@ func dir8_from(v: Vector2) -> String:
 
 func _create_player() -> void:
 	player = CharacterBody2D.new()
-	add_child(player)
+	ysort.add_child(player)
 
 	var col := CollisionShape2D.new()
 	var shape := RectangleShape2D.new()
@@ -191,7 +214,6 @@ func _create_player() -> void:
 		sprite.flip_h = true
 		var h := float(sprite.texture.get_height()) * sprite.scale.y
 		sprite.position = Vector2(0, -h / 2.0)
-		sprite.z_index = 5
 		player.add_child(sprite)
 	else:
 		var ph := Polygon2D.new()
@@ -344,7 +366,7 @@ func _spawn_projectile() -> void:
 	var orb := Sprite2D.new()
 	orb.texture = orb_tex
 	orb.scale = Vector2(0.55, 0.55)
-	orb.z_index = 6
+	orb.z_index = 100
 	orb.position = player.position + dir * 34.0 + Vector2(0, -54)
 	add_child(orb)
 	projectiles.append({"node": orb, "vel": dir * SPELL_SPEED, "life": 1.5})
@@ -425,39 +447,13 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _draw() -> void:
-	# sol herbe
 	if ground_tex != null:
 		draw_texture_rect(ground_tex, Rect2(-WORLD_HALF, -WORLD_HALF, WORLD_HALF * 2, WORLD_HALF * 2), true)
 	else:
 		draw_rect(Rect2(-WORLD_HALF, -WORLD_HALF, WORLD_HALF * 2, WORLD_HALF * 2), Color(0.20, 0.28, 0.20))
-	# variation d'herbe
 	for g in grass_var:
 		if g.tex != null:
 			draw_texture_rect(g.tex, Rect2(g.pos - g.size * 0.5, g.size), false)
-	# terre (place + chemins)
 	if patch_dirt != null:
 		for d in dirt_spots:
 			draw_texture_rect(patch_dirt, Rect2(d.pos - d.size * 0.5, d.size), false)
-	# maisons
-	for h in houses:
-		_draw_house(h)
-
-
-func _draw_house(h: Dictionary) -> void:
-	var pos: Vector2 = h.pos
-	var sz: Vector2 = h.size
-	var body := Color(0.80, 0.70, 0.55)
-	draw_rect(Rect2(pos, sz), body)
-	draw_rect(Rect2(pos, sz), Color(0.47, 0.37, 0.27), false, 3.0)
-	var rh := sz.y * 0.55
-	var roof_pts := PackedVector2Array([
-		pos + Vector2(-sz.x * 0.12, 0), pos + Vector2(sz.x * 1.12, 0),
-		pos + Vector2(sz.x * 0.78, -rh), pos + Vector2(sz.x * 0.22, -rh)])
-	draw_colored_polygon(roof_pts, h.roof)
-	var dw := sz.x * 0.26
-	var dh := sz.y * 0.5
-	draw_rect(Rect2(pos + Vector2(sz.x * 0.5 - dw * 0.5, sz.y - dh), Vector2(dw, dh)), Color(0.27, 0.19, 0.13))
-	var ww := sz.x * 0.2
-	var wyf := sz.y * 0.22
-	draw_rect(Rect2(pos + Vector2(sz.x * 0.12, wyf), Vector2(ww, ww * 0.8)), Color(0.88, 0.92, 0.59))
-	draw_rect(Rect2(pos + Vector2(sz.x * 0.68, wyf), Vector2(ww, ww * 0.8)), Color(0.88, 0.92, 0.59))
