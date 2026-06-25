@@ -116,6 +116,7 @@ func _create_player() -> void:
 		sprite = Sprite2D.new()
 		sprite.texture = idle_tex["down"]
 		sprite.scale = Vector2(0.6, 0.6)
+		sprite.flip_h = true   # corrige l'inversion gauche-droite des sprites de l'outil
 		var h := float(sprite.texture.get_height()) * sprite.scale.y
 		sprite.position = Vector2(0, -h / 2.0)
 		player.add_child(sprite)
