@@ -1,8 +1,7 @@
 extends Node2D
 
 # =====================================================================
-#  Sylvelinne — niveau de test (Aëla)
-#  Deplacement + idle + SORT + INVENTAIRE + VILLAGE (vrais batiments)
+#  Sylvelinne — Aëla : monde + village + INTERIEURS
 # =====================================================================
 
 const PLAYER_SPEED: float = 240.0
@@ -11,6 +10,12 @@ const CAST_FPS: float = 14.0
 const SPELL_SPEED: float = 520.0
 const CAM_ZOOM: float = 3.0
 const WORLD_HALF: int = 3000
+
+# Interieur : une "pièce" placée loin dans le monde, avec sa propre caméra fixe
+const INTERIOR_CENTER: Vector2 = Vector2(10000.0, 0.0)
+const ROOM_H: float = 330.0
+const WALK_OFFSET: Vector2 = Vector2(0, 95)     # centre de la zone marchable (sol)
+const WALK_HALF: Vector2 = Vector2(100, 45)     # demi-taille de la zone marchable
 
 const DIRS8: Array = ["right", "down_right", "down", "down_left", "left", "up_left", "up", "up_right"]
 const DIR_VEC: Dictionary = {
@@ -32,7 +37,6 @@ const ITEMS: Array = [
 	{"icon": "lanterne", "name": "Lanterne", "qty": 1}, {"icon": "tapis", "name": "Tapis de couchage", "qty": 1},
 ]
 
-# batiments / nature : base au sol (pos), hauteur affichee (h), empreinte de collision (foot)
 const PROPS: Array = [
 	{"tex": "buildings/maison2", "pos": Vector2(-260, -360), "h": 380.0, "foot": Vector2(150, 40)},
 	{"tex": "buildings/maison3", "pos": Vector2(330, -340), "h": 380.0, "foot": Vector2(150, 40)},
@@ -47,6 +51,8 @@ const PROPS: Array = [
 var player: CharacterBody2D
 var sprite: Sprite2D
 var ysort: Node2D
+var cam_outside: Camera2D
+var cam_inside: Camera2D
 var ground_tex: Texture2D
 var idle_tex: Dictionary = {}
 var move_tex: Dictionary = {}
@@ -69,6 +75,11 @@ var cast_fired: bool = false
 var projectiles: Array = []
 
 var inv_root: Control
+var enter_btn: Button
+var exit_btn: Button
+var inside: bool = false
+var near_house: int = -1
+var return_pos: Vector2 = Vector2.ZERO
 
 var touch_active: bool = false
 var touch_origin: Vector2 = Vector2.ZERO
@@ -86,6 +97,7 @@ func _ready() -> void:
 	add_child(ysort)
 	_create_player()
 	_spawn_props()
+	_build_interior()
 	_create_hud()
 	_create_inventory()
 	queue_redraw()
@@ -162,15 +174,39 @@ func _spawn_props() -> void:
 		spr.offset = Vector2(0, -tex.get_height() / 2.0)
 		spr.position = pr.pos
 		ysort.add_child(spr)
+		_add_collision(pr.pos + Vector2(0, -pr.foot.y / 2.0), pr.foot)
 
-		var sb := StaticBody2D.new()
-		var cs := CollisionShape2D.new()
-		var rs := RectangleShape2D.new()
-		rs.size = pr.foot
-		cs.shape = rs
-		cs.position = pr.pos + Vector2(0, -pr.foot.y / 2.0)
-		sb.add_child(cs)
-		add_child(sb)
+
+func _build_interior() -> void:
+	var path := "res://assets/interiors/cabinet.png"
+	if ResourceLoader.exists(path):
+		var tex: Texture2D = load(path)
+		var spr := Sprite2D.new()
+		spr.texture = tex
+		var s: float = ROOM_H / float(tex.get_height())
+		spr.scale = Vector2(s, s)
+		spr.position = INTERIOR_CENTER
+		ysort.add_child(spr)
+	var c := INTERIOR_CENTER + WALK_OFFSET
+	_add_collision(c + Vector2(0, -WALK_HALF.y), Vector2(WALK_HALF.x * 2.0, 12))
+	_add_collision(c + Vector2(0, WALK_HALF.y), Vector2(WALK_HALF.x * 2.0, 12))
+	_add_collision(c + Vector2(-WALK_HALF.x, 0), Vector2(12, WALK_HALF.y * 2.0))
+	_add_collision(c + Vector2(WALK_HALF.x, 0), Vector2(12, WALK_HALF.y * 2.0))
+	cam_inside = Camera2D.new()
+	cam_inside.zoom = Vector2(CAM_ZOOM, CAM_ZOOM)
+	cam_inside.position = INTERIOR_CENTER
+	add_child(cam_inside)
+
+
+func _add_collision(pos: Vector2, size: Vector2) -> void:
+	var sb := StaticBody2D.new()
+	var cs := CollisionShape2D.new()
+	var rs := RectangleShape2D.new()
+	rs.size = size
+	cs.shape = rs
+	cs.position = pos
+	sb.add_child(cs)
+	add_child(sb)
 
 
 func _make_orb() -> Texture2D:
@@ -221,12 +257,12 @@ func _create_player() -> void:
 		ph.color = Color(0.96, 0.86, 0.46)
 		player.add_child(ph)
 
-	var cam := Camera2D.new()
-	cam.position_smoothing_enabled = true
-	cam.position_smoothing_speed = 8.0
-	cam.zoom = Vector2(CAM_ZOOM, CAM_ZOOM)
-	player.add_child(cam)
-	cam.make_current()
+	cam_outside = Camera2D.new()
+	cam_outside.position_smoothing_enabled = true
+	cam_outside.position_smoothing_speed = 8.0
+	cam_outside.zoom = Vector2(CAM_ZOOM, CAM_ZOOM)
+	player.add_child(cam_outside)
+	cam_outside.make_current()
 
 
 func _create_hud() -> void:
@@ -255,6 +291,24 @@ func _create_hud() -> void:
 	sac_btn.modulate = Color(1, 1, 1, 0.92)
 	sac_btn.pressed.connect(_toggle_inventory)
 	layer.add_child(sac_btn)
+
+	enter_btn = Button.new()
+	enter_btn.text = "Entrer"
+	enter_btn.add_theme_font_size_override("font_size", 44)
+	enter_btn.size = Vector2(280, 120)
+	enter_btn.position = Vector2(820, 900)
+	enter_btn.visible = false
+	enter_btn.pressed.connect(_on_enter)
+	layer.add_child(enter_btn)
+
+	exit_btn = Button.new()
+	exit_btn.text = "Sortir"
+	exit_btn.add_theme_font_size_override("font_size", 44)
+	exit_btn.size = Vector2(280, 120)
+	exit_btn.position = Vector2(820, 900)
+	exit_btn.visible = false
+	exit_btn.pressed.connect(_on_exit)
+	layer.add_child(exit_btn)
 
 
 func _create_inventory() -> void:
@@ -350,6 +404,30 @@ func _toggle_inventory() -> void:
 	inv_root.visible = not inv_root.visible
 
 
+func _on_enter() -> void:
+	if near_house < 0 or inside:
+		return
+	inside = true
+	return_pos = PROPS[near_house].pos + Vector2(0, 60)
+	player.position = INTERIOR_CENTER + WALK_OFFSET
+	player.velocity = Vector2.ZERO
+	facing = "down"
+	cam_inside.make_current()
+	enter_btn.visible = false
+	exit_btn.visible = true
+
+
+func _on_exit() -> void:
+	if not inside:
+		return
+	inside = false
+	player.position = return_pos
+	player.velocity = Vector2.ZERO
+	facing = "down"
+	cam_outside.make_current()
+	exit_btn.visible = false
+
+
 func _on_cast() -> void:
 	if casting:
 		return
@@ -392,6 +470,14 @@ func _physics_process(_delta: float) -> void:
 
 
 func _process(delta: float) -> void:
+	if not inside:
+		near_house = -1
+		for i in range(4):
+			if player.position.distance_to(PROPS[i].pos) < 150.0:
+				near_house = i
+				break
+		enter_btn.visible = (near_house >= 0) and not (inv_root != null and inv_root.visible)
+
 	_update_projectiles(delta)
 	if sprite == null:
 		return
@@ -447,6 +533,9 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _draw() -> void:
+	# fond sombre de l'intérieur (autour de la pièce)
+	draw_rect(Rect2(INTERIOR_CENTER - Vector2(700, 460), Vector2(1400, 920)), Color(0.10, 0.09, 0.15))
+	# sol exterieur (herbe)
 	if ground_tex != null:
 		draw_texture_rect(ground_tex, Rect2(-WORLD_HALF, -WORLD_HALF, WORLD_HALF * 2, WORLD_HALF * 2), true)
 	else:
