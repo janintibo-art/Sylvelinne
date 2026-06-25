@@ -9,6 +9,7 @@ const PLAYER_SPEED: float = 240.0
 const MOVE_FPS: float = 13.0
 const GRID: int = 64
 const WORLD_HALF: int = 3000
+const CAM_ZOOM: float = 3.0   # zoom camera : 2 = un peu, 3 = beaucoup, 4 = enorme
 
 # ordre aligne sur l'angle (atan2) : 0=droite, +45=bas-droite, ...
 const DIRS8: Array = ["right", "down_right", "down", "down_left", "left", "up_left", "up", "up_right"]
@@ -68,7 +69,7 @@ func _create_player() -> void:
 	if idle_tex.has("down"):
 		sprite = Sprite2D.new()
 		sprite.texture = idle_tex["down"]
-		sprite.scale = Vector2(0.5, 0.5)
+		sprite.scale = Vector2(0.6, 0.6)
 		var h := float(sprite.texture.get_height()) * sprite.scale.y
 		sprite.position = Vector2(0, -h / 2.0)
 		player.add_child(sprite)
@@ -81,6 +82,7 @@ func _create_player() -> void:
 	var cam := Camera2D.new()
 	cam.position_smoothing_enabled = true
 	cam.position_smoothing_speed = 8.0
+	cam.zoom = Vector2(CAM_ZOOM, CAM_ZOOM)
 	player.add_child(cam)
 	cam.make_current()
 
