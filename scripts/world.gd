@@ -2,14 +2,14 @@ extends Node2D
 
 # =====================================================================
 #  Sylvelinne — niveau de test (Aëla)
-#  Deplacement 8 directions + idle + SORT (bouton + boule de magie)
+#  Deplacement 8 dir + idle + SORT + INVENTAIRE
 # =====================================================================
 
 const PLAYER_SPEED: float = 240.0
 const MOVE_FPS: float = 13.0
 const CAST_FPS: float = 14.0
 const SPELL_SPEED: float = 520.0
-const CAM_ZOOM: float = 3.0          # zoom camera : 2 = un peu, 3 = beaucoup, 4 = enorme
+const CAM_ZOOM: float = 3.0
 const WORLD_HALF: int = 3000
 
 const DIRS8: Array = ["right", "down_right", "down", "down_left", "left", "up_left", "up", "up_right"]
@@ -19,12 +19,36 @@ const DIR_VEC: Dictionary = {
 	"up": Vector2(0, -1), "up_right": Vector2(0.7071, -0.7071)
 }
 
+# Inventaire de depart (icone, nom affiche, quantite)
+const ITEMS: Array = [
+	{"icon": "epee", "name": "Épée", "qty": 1},
+	{"icon": "arc", "name": "Arc", "qty": 1},
+	{"icon": "carquois", "name": "Carquois", "qty": 1},
+	{"icon": "bouclier", "name": "Bouclier", "qty": 1},
+	{"icon": "sac", "name": "Sac à dos", "qty": 1},
+	{"icon": "potion_soin", "name": "Potion de soin", "qty": 2},
+	{"icon": "potion_mana", "name": "Potion de mana", "qty": 1},
+	{"icon": "bourse", "name": "Bourse", "qty": 1},
+	{"icon": "cristal", "name": "Cristal", "qty": 3},
+	{"icon": "grimoire", "name": "Grimoire", "qty": 1},
+	{"icon": "torche", "name": "Torche", "qty": 2},
+	{"icon": "corde", "name": "Corde", "qty": 1},
+	{"icon": "piege", "name": "Piège", "qty": 2},
+	{"icon": "herbes", "name": "Herbes", "qty": 4},
+	{"icon": "pain", "name": "Pain", "qty": 3},
+	{"icon": "pomme", "name": "Pomme", "qty": 2},
+	{"icon": "coffre", "name": "Coffre", "qty": 1},
+	{"icon": "cle", "name": "Clé", "qty": 1},
+	{"icon": "lanterne", "name": "Lanterne", "qty": 1},
+	{"icon": "tapis", "name": "Tapis de couchage", "qty": 1},
+]
+
 var player: CharacterBody2D
 var sprite: Sprite2D
 var ground_tex: Texture2D
-var idle_tex: Dictionary = {}        # direction -> Texture2D
-var move_tex: Dictionary = {}        # direction -> Array de Texture2D
-var cast_tex: Dictionary = {}        # direction -> Array de Texture2D
+var idle_tex: Dictionary = {}
+var move_tex: Dictionary = {}
+var cast_tex: Dictionary = {}
 var orb_tex: Texture2D
 
 var facing: String = "down"
@@ -34,7 +58,9 @@ var anim_t: float = 0.0
 var casting: bool = false
 var cast_t: float = 0.0
 var cast_fired: bool = false
-var projectiles: Array = []          # { node, vel, life }
+var projectiles: Array = []
+
+var inv_root: Control
 
 var touch_active: bool = false
 var touch_origin: Vector2 = Vector2.ZERO
@@ -48,7 +74,7 @@ func _ready() -> void:
 	orb_tex = _make_orb()
 	_create_player()
 	_create_hud()
-	_create_cast_button()
+	_create_inventory()
 	queue_redraw()
 
 
@@ -87,9 +113,9 @@ func _make_orb() -> Texture2D:
 			var d := Vector2(x, y).distance_to(c) / (s / 2.0)
 			var a: float = clampf(1.0 - d, 0.0, 1.0)
 			a = a * a
-			var col := Color(1.0, 0.85, 0.4, a)      # halo doré
+			var col := Color(1.0, 0.85, 0.4, a)
 			if d < 0.45:
-				col = Color(1.0, 1.0, 0.92, a)        # cœur clair
+				col = Color(1.0, 1.0, 0.92, a)
 			img.set_pixel(x, y, col)
 	return ImageTexture.create_from_image(img)
 
@@ -116,7 +142,7 @@ func _create_player() -> void:
 		sprite = Sprite2D.new()
 		sprite.texture = idle_tex["down"]
 		sprite.scale = Vector2(0.6, 0.6)
-		sprite.flip_h = true   # corrige l'inversion gauche-droite des sprites de l'outil
+		sprite.flip_h = true
 		var h := float(sprite.texture.get_height()) * sprite.scale.y
 		sprite.position = Vector2(0, -h / 2.0)
 		player.add_child(sprite)
@@ -137,23 +163,122 @@ func _create_player() -> void:
 func _create_hud() -> void:
 	var layer := CanvasLayer.new()
 	add_child(layer)
+
 	var label := Label.new()
-	label.text = "Sylvelinne — Aela\nDeplacement : glisse le doigt    Sort : bouton en bas a droite"
+	label.text = "Sylvelinne — Aela"
 	label.position = Vector2(24, 24)
 	layer.add_child(label)
 
+	var cast_btn := Button.new()
+	cast_btn.text = "✨ Sort"
+	cast_btn.add_theme_font_size_override("font_size", 48)
+	cast_btn.size = Vector2(260, 150)
+	cast_btn.position = Vector2(1600, 870)
+	cast_btn.modulate = Color(1, 1, 1, 0.92)
+	cast_btn.pressed.connect(_on_cast)
+	layer.add_child(cast_btn)
 
-func _create_cast_button() -> void:
+	var sac_btn := Button.new()
+	sac_btn.text = "Sac"
+	sac_btn.add_theme_font_size_override("font_size", 44)
+	sac_btn.size = Vector2(220, 96)
+	sac_btn.position = Vector2(1660, 30)
+	sac_btn.modulate = Color(1, 1, 1, 0.92)
+	sac_btn.pressed.connect(_toggle_inventory)
+	layer.add_child(sac_btn)
+
+
+func _create_inventory() -> void:
 	var layer := CanvasLayer.new()
+	layer.layer = 10
 	add_child(layer)
-	var btn := Button.new()
-	btn.text = "✨ Sort"
-	btn.add_theme_font_size_override("font_size", 48)
-	btn.size = Vector2(260, 150)
-	btn.position = Vector2(1600, 870)
-	btn.modulate = Color(1, 1, 1, 0.92)
-	btn.pressed.connect(_on_cast)
-	layer.add_child(btn)
+
+	inv_root = Control.new()
+	inv_root.set_anchors_preset(Control.PRESET_FULL_RECT)
+	inv_root.visible = false
+	layer.add_child(inv_root)
+
+	var dim := ColorRect.new()
+	dim.color = Color(0, 0, 0, 0.6)
+	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
+	inv_root.add_child(dim)
+
+	var center := CenterContainer.new()
+	center.set_anchors_preset(Control.PRESET_FULL_RECT)
+	inv_root.add_child(center)
+
+	var panel := PanelContainer.new()
+	panel.custom_minimum_size = Vector2(1500, 860)
+	center.add_child(panel)
+
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 40)
+	margin.add_theme_constant_override("margin_right", 40)
+	margin.add_theme_constant_override("margin_top", 30)
+	margin.add_theme_constant_override("margin_bottom", 30)
+	panel.add_child(margin)
+
+	var vb := VBoxContainer.new()
+	vb.add_theme_constant_override("separation", 18)
+	margin.add_child(vb)
+
+	var title := Label.new()
+	title.text = "Inventaire"
+	title.add_theme_font_size_override("font_size", 56)
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	vb.add_child(title)
+
+	var scroll := ScrollContainer.new()
+	scroll.custom_minimum_size = Vector2(1420, 640)
+	vb.add_child(scroll)
+
+	var grid := GridContainer.new()
+	grid.columns = 6
+	grid.add_theme_constant_override("h_separation", 16)
+	grid.add_theme_constant_override("v_separation", 16)
+	scroll.add_child(grid)
+
+	for item in ITEMS:
+		grid.add_child(_make_slot(item))
+
+	var close_btn := Button.new()
+	close_btn.text = "Fermer"
+	close_btn.add_theme_font_size_override("font_size", 42)
+	close_btn.pressed.connect(_toggle_inventory)
+	vb.add_child(close_btn)
+
+
+func _make_slot(item: Dictionary) -> Control:
+	var box := VBoxContainer.new()
+	box.custom_minimum_size = Vector2(220, 200)
+	box.alignment = BoxContainer.ALIGNMENT_CENTER
+
+	var icon := TextureRect.new()
+	icon.custom_minimum_size = Vector2(130, 130)
+	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	var p := "res://assets/items/%s.png" % item.icon
+	if ResourceLoader.exists(p):
+		icon.texture = load(p)
+	box.add_child(icon)
+
+	var nm := Label.new()
+	nm.text = item.name
+	nm.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	nm.add_theme_font_size_override("font_size", 26)
+	box.add_child(nm)
+
+	var q := Label.new()
+	q.text = "x%d" % item.qty
+	q.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	q.add_theme_font_size_override("font_size", 24)
+	q.modulate = Color(1, 1, 0.6)
+	box.add_child(q)
+	return box
+
+
+func _toggle_inventory() -> void:
+	inv_root.visible = not inv_root.visible
 
 
 func _on_cast() -> void:
@@ -178,7 +303,7 @@ func _spawn_projectile() -> void:
 
 
 func _physics_process(_delta: float) -> void:
-	if casting:
+	if casting or (inv_root != null and inv_root.visible):
 		player.velocity = Vector2.ZERO
 		player.move_and_slide()
 		return
@@ -205,7 +330,6 @@ func _process(delta: float) -> void:
 		var cframes: Array = cast_tex[facing]
 		cast_t += delta
 		var idx := int(cast_t * CAST_FPS)
-		# lancer la boule au milieu de l'animation (moment du "lancer")
 		if not cast_fired and cast_t > (cframes.size() / CAST_FPS) * 0.5:
 			_spawn_projectile()
 			cast_fired = true
@@ -241,6 +365,8 @@ func _update_projectiles(delta: float) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	if inv_root != null and inv_root.visible:
+		return
 	if event is InputEventScreenTouch:
 		touch_active = event.pressed
 		if event.pressed:
