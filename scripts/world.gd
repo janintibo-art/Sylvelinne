@@ -2,7 +2,7 @@ extends Node2D
 
 # =====================================================================
 #  Sylvelinne — Aëla
-#  Monde + village + INTERIEUR PRATICABLE & INTERACTIF + VENT
+#  Monde + village + 4 INTERIEURS distincts (effet TARDIS) + VENT
 # =====================================================================
 
 const PLAYER_SPEED: float = 240.0
@@ -11,10 +11,6 @@ const CAST_FPS: float = 14.0
 const SPELL_SPEED: float = 520.0
 const CAM_ZOOM: float = 3.0
 const WORLD_HALF: int = 3000
-
-# Interieur : pièce construite, placée loin, caméra fixe
-const INTERIOR_CENTER: Vector2 = Vector2(10000.0, 0.0)
-const ROOM_HALF: Vector2 = Vector2(300.0, 170.0)   # demi-taille du sol
 
 const DIRS8: Array = ["right", "down_right", "down", "down_left", "left", "up_left", "up", "up_right"]
 const DIR_VEC: Dictionary = {
@@ -40,11 +36,16 @@ const PROPS: Array = [
 	{"tex": "nature/rocher3", "pos": Vector2(-300, 450), "h": 150.0, "foot": Vector2(110, 30)},
 ]
 
+# 4 pièces (1 par maison, même ordre que PROPS[0..3])
+const ROOM_CENTERS: Array = [Vector2(10000, 0), Vector2(12600, 0), Vector2(15200, 0), Vector2(17800, 0)]
+const ROOM_HALVES: Array = [Vector2(300, 170), Vector2(560, 360), Vector2(300, 180), Vector2(620, 400)]
+const ROOM_FLOORTINT: Array = [Color(1, 1, 1), Color(0.9, 0.86, 0.82), Color(1.06, 0.98, 0.9), Color(1.1, 0.99, 0.85)]
+const ROOM_WALLTINT: Array = [Color(1, 1, 1), Color(0.86, 0.86, 0.94), Color(1.02, 0.98, 0.96), Color(1.04, 0.96, 0.86)]
+
 var player: CharacterBody2D
 var sprite: Sprite2D
 var ysort: Node2D
-var cam_outside: Camera2D
-var cam_inside: Camera2D
+var cam: Camera2D
 var ground_tex: Texture2D
 var floor_tex: Texture2D
 var wall_tex: Texture2D
@@ -59,6 +60,8 @@ var patch_gdark: Texture2D
 var grass_var: Array = []
 var dirt_spots: Array = []
 var sway_sprites: Array = []
+var petals: CPUParticles2D
+var dust: CPUParticles2D
 
 var facing: String = "down"
 var moving: bool = false
@@ -79,6 +82,7 @@ var toast_label: Label
 var toast_t: float = 0.0
 
 var inside: bool = false
+var current_room: int = 0
 var near_house: int = -1
 var return_pos: Vector2 = Vector2.ZERO
 var interactives: Array = []
@@ -105,10 +109,10 @@ func _ready() -> void:
 	add_child(ysort)
 	_create_player()
 	_spawn_props()
-	_build_interior()
+	_build_interiors()
 	_create_hud()
 	_create_inventory()
-	_create_petals()
+	_create_particles()
 	queue_redraw()
 
 
@@ -192,46 +196,95 @@ func _spawn_props() -> void:
 			sway_sprites.append({"spr": spr, "ph": randf() * TAU})
 
 
-# ---------------- INTERIEUR CONSTRUIT ----------------
-func _build_interior() -> void:
-	var ic := INTERIOR_CENTER
-	# tapis (sous tout, z=-1)
-	_add_furni("tapis", Vector2(0, 30), 135.0, false, Vector2.ZERO, -1)
-	# meubles (avec collision)
-	_add_furni("lit", Vector2(-190, -90), 132.0, true, Vector2(112, 38))
-	_add_furni("commode", Vector2(-50, -135), 108.0, true, Vector2(92, 28))
-	_add_furni("biblio", Vector2(55, -138), 150.0, true, Vector2(72, 26))
-	_add_furni("armoire", Vector2(210, -100), 150.0, true, Vector2(72, 28))
-	_add_furni("bureau", Vector2(215, 20), 122.0, true, Vector2(92, 32))
-	_add_furni("table", Vector2(0, 55), 104.0, true, Vector2(92, 36))
-	_add_furni("tabouret", Vector2(0, 102), 76.0, true, Vector2(42, 22))
-	_add_furni("fauteuil", Vector2(205, 105), 118.0, true, Vector2(78, 34))
-	# coffre interactif
-	_add_interactive("chest", "furniture/coffre", Vector2(-205, 100), 114.0, true, Vector2(78, 32),
+# ====================== INTERIEURS ======================
+func _build_interiors() -> void:
+	for i in range(ROOM_CENTERS.size()):
+		var c: Vector2 = ROOM_CENTERS[i]
+		var hf: Vector2 = ROOM_HALVES[i]
+		_add_collision(c + Vector2(0, -hf.y), Vector2(hf.x * 2 + 12, 12))
+		_add_collision(c + Vector2(0, hf.y), Vector2(hf.x * 2 + 12, 12))
+		_add_collision(c + Vector2(-hf.x, 0), Vector2(12, hf.y * 2))
+		_add_collision(c + Vector2(hf.x, 0), Vector2(12, hf.y * 2))
+	_build_chambre(ROOM_CENTERS[0])
+	_build_biblio(ROOM_CENTERS[1])
+	_build_salon(ROOM_CENTERS[2])
+	_build_auberge(ROOM_CENTERS[3])
+
+
+func _build_chambre(c: Vector2) -> void:
+	_furni(c, "tapis", Vector2(0, 30), 135, false, Vector2.ZERO, -1)
+	_furni(c, "lit", Vector2(-190, -90), 132, true, Vector2(112, 38))
+	_furni(c, "commode", Vector2(-50, -135), 108, true, Vector2(92, 28))
+	_furni(c, "biblio", Vector2(55, -138), 150, true, Vector2(72, 26))
+	_furni(c, "armoire", Vector2(210, -100), 150, true, Vector2(72, 28))
+	_furni(c, "bureau", Vector2(215, 20), 122, true, Vector2(92, 32))
+	_furni(c, "table", Vector2(0, 55), 104, true, Vector2(92, 36))
+	_furni(c, "tabouret", Vector2(0, 102), 76, true, Vector2(42, 22))
+	_furni(c, "fauteuil", Vector2(205, 105), 118, true, Vector2(78, 34))
+	_inter(c, "chest", "furniture/coffre", Vector2(-205, 100), 114, true, Vector2(78, 32),
 		[{"icon": "cristal", "name": "Cristal", "qty": 2}, {"icon": "bourse", "name": "Bourse d'or", "qty": 1}])
-	# objets à ramasser (icônes propres)
-	_add_interactive("item", "items/potion_soin", Vector2(140, 35), 30.0, false, Vector2.ZERO,
-		[{"icon": "potion_soin", "name": "Potion de soin", "qty": 1}])
-	_add_interactive("item", "items/cristal", Vector2(-35, 22), 26.0, false, Vector2.ZERO,
-		[{"icon": "cristal", "name": "Cristal", "qty": 1}])
-	_add_interactive("item", "items/pomme", Vector2(70, 78), 26.0, false, Vector2.ZERO,
-		[{"icon": "pomme", "name": "Pomme", "qty": 1}])
-	_add_interactive("item", "items/cle", Vector2(-130, -28), 26.0, false, Vector2.ZERO,
-		[{"icon": "cle", "name": "Clé", "qty": 1}])
-	# murs (limite du sol)
-	_add_collision(ic + Vector2(0, -ROOM_HALF.y), Vector2(ROOM_HALF.x * 2.0 + 12, 12))
-	_add_collision(ic + Vector2(0, ROOM_HALF.y), Vector2(ROOM_HALF.x * 2.0 + 12, 12))
-	_add_collision(ic + Vector2(-ROOM_HALF.x, 0), Vector2(12, ROOM_HALF.y * 2.0))
-	_add_collision(ic + Vector2(ROOM_HALF.x, 0), Vector2(12, ROOM_HALF.y * 2.0))
-	# caméra intérieure fixe
-	cam_inside = Camera2D.new()
-	cam_inside.zoom = Vector2(CAM_ZOOM, CAM_ZOOM)
-	cam_inside.position = ic
-	add_child(cam_inside)
-	_create_dust()
+	_inter(c, "item", "items/potion_soin", Vector2(140, 35), 30, false, Vector2.ZERO, [{"icon": "potion_soin", "name": "Potion de soin", "qty": 1}])
+	_inter(c, "item", "items/cristal", Vector2(-35, 22), 26, false, Vector2.ZERO, [{"icon": "cristal", "name": "Cristal", "qty": 1}])
+	_inter(c, "item", "items/pomme", Vector2(70, 78), 26, false, Vector2.ZERO, [{"icon": "pomme", "name": "Pomme", "qty": 1}])
+	_inter(c, "item", "items/cle", Vector2(-130, -28), 26, false, Vector2.ZERO, [{"icon": "cle", "name": "Clé", "qty": 1}])
 
 
-func _add_furni(name: String, rel: Vector2, h: float, collide: bool, foot: Vector2, z: int = 0) -> void:
+func _build_biblio(c: Vector2) -> void:
+	_furni(c, "tapis", Vector2(0, 40), 210, false, Vector2.ZERO, -1)
+	for x in [-440, -264, -88, 88, 264, 440]:
+		_furni(c, "biblio", Vector2(x, -335), 165, true, Vector2(80, 26))
+	_furni(c, "biblio", Vector2(-500, 90), 165, true, Vector2(80, 26))
+	_furni(c, "biblio", Vector2(500, 90), 165, true, Vector2(80, 26))
+	_furni(c, "bureau", Vector2(0, -170), 130, true, Vector2(100, 32))
+	for tx in [-220, 220]:
+		_furni(c, "table", Vector2(tx, 60), 104, true, Vector2(92, 36))
+		_furni(c, "fauteuil", Vector2(tx - 95, 72), 116, true, Vector2(74, 32))
+		_furni(c, "fauteuil", Vector2(tx + 95, 72), 116, true, Vector2(74, 32))
+	_furni(c, "commode", Vector2(-500, -150), 108, true, Vector2(92, 28))
+	_inter(c, "chest", "furniture/coffre", Vector2(470, 250), 116, true, Vector2(78, 32),
+		[{"icon": "grimoire", "name": "Grimoire ancien", "qty": 1}, {"icon": "cristal", "name": "Cristal", "qty": 3}])
+	_inter(c, "item", "items/grimoire", Vector2(0, -108), 32, false, Vector2.ZERO, [{"icon": "grimoire", "name": "Grimoire", "qty": 1}])
+	_inter(c, "item", "items/cristal", Vector2(-220, 95), 26, false, Vector2.ZERO, [{"icon": "cristal", "name": "Cristal", "qty": 1}])
+	_inter(c, "item", "items/cle", Vector2(220, 95), 26, false, Vector2.ZERO, [{"icon": "cle", "name": "Clé", "qty": 1}])
+	_inter(c, "item", "items/potion_mana", Vector2(-500, -100), 28, false, Vector2.ZERO, [{"icon": "potion_mana", "name": "Potion de mana", "qty": 1}])
+
+
+func _build_salon(c: Vector2) -> void:
+	_furni(c, "tapis", Vector2(0, 45), 150, false, Vector2.ZERO, -1)
+	_furni(c, "fauteuil", Vector2(-150, 35), 120, true, Vector2(76, 34))
+	_furni(c, "fauteuil", Vector2(150, 35), 120, true, Vector2(76, 34))
+	_furni(c, "table", Vector2(0, 65), 100, true, Vector2(90, 34))
+	_furni(c, "biblio", Vector2(-205, -145), 150, true, Vector2(72, 26))
+	_furni(c, "biblio", Vector2(60, -148), 150, true, Vector2(72, 26))
+	_furni(c, "commode", Vector2(170, -140), 110, true, Vector2(92, 28))
+	_inter(c, "chest", "furniture/coffre", Vector2(205, 110), 114, true, Vector2(78, 32),
+		[{"icon": "bourse", "name": "Bourse d'or", "qty": 1}, {"icon": "potion_soin", "name": "Potion de soin", "qty": 1}])
+	_inter(c, "item", "items/potion_soin", Vector2(-60, 85), 28, false, Vector2.ZERO, [{"icon": "potion_soin", "name": "Potion de soin", "qty": 1}])
+	_inter(c, "item", "items/pomme", Vector2(60, 90), 26, false, Vector2.ZERO, [{"icon": "pomme", "name": "Pomme", "qty": 1}])
+	_inter(c, "item", "items/cle", Vector2(-180, -30), 26, false, Vector2.ZERO, [{"icon": "cle", "name": "Clé", "qty": 1}])
+
+
+func _build_auberge(c: Vector2) -> void:
+	_furni(c, "tapis", Vector2(0, 30), 240, false, Vector2.ZERO, -1)
+	for tp in [Vector2(-400, -110), Vector2(0, -110), Vector2(400, -110), Vector2(-400, 150), Vector2(0, 150), Vector2(400, 150)]:
+		_furni(c, "table", tp, 104, true, Vector2(92, 36))
+		_furni(c, "tabouret", tp + Vector2(-80, 6), 74, true, Vector2(40, 22))
+		_furni(c, "tabouret", tp + Vector2(80, 6), 74, true, Vector2(40, 22))
+	_furni(c, "commode", Vector2(-250, -370), 110, true, Vector2(92, 28))
+	_furni(c, "biblio", Vector2(-460, -365), 160, true, Vector2(78, 26))
+	_furni(c, "armoire", Vector2(250, -370), 150, true, Vector2(72, 28))
+	_furni(c, "biblio", Vector2(460, -365), 160, true, Vector2(78, 26))
+	_furni(c, "fauteuil", Vector2(-560, 260), 118, true, Vector2(74, 32))
+	_furni(c, "fauteuil", Vector2(560, 260), 118, true, Vector2(74, 32))
+	_inter(c, "chest", "furniture/coffre", Vector2(520, -280), 118, true, Vector2(78, 32),
+		[{"icon": "bourse", "name": "Bourse d'or", "qty": 2}, {"icon": "pain", "name": "Pain", "qty": 3}])
+	_inter(c, "item", "items/pain", Vector2(0, -130), 28, false, Vector2.ZERO, [{"icon": "pain", "name": "Pain", "qty": 1}])
+	_inter(c, "item", "items/pomme", Vector2(-400, -130), 26, false, Vector2.ZERO, [{"icon": "pomme", "name": "Pomme", "qty": 1}])
+	_inter(c, "item", "items/potion_soin", Vector2(400, -130), 28, false, Vector2.ZERO, [{"icon": "potion_soin", "name": "Potion de soin", "qty": 1}])
+	_inter(c, "item", "items/bourse", Vector2(-560, 300), 28, false, Vector2.ZERO, [{"icon": "bourse", "name": "Bourse d'or", "qty": 1}])
+
+
+func _furni(center: Vector2, name: String, rel: Vector2, h: float, collide: bool, foot: Vector2, z: int = 0) -> void:
 	var path := "res://assets/furniture/%s.png" % name
 	if not ResourceLoader.exists(path):
 		return
@@ -241,14 +294,14 @@ func _add_furni(name: String, rel: Vector2, h: float, collide: bool, foot: Vecto
 	var s: float = h / float(tex.get_height())
 	spr.scale = Vector2(s, s)
 	spr.offset = Vector2(0, -tex.get_height() / 2.0)
-	spr.position = INTERIOR_CENTER + rel
+	spr.position = center + rel
 	spr.z_index = z
 	ysort.add_child(spr)
 	if collide:
-		_add_collision(INTERIOR_CENTER + rel + Vector2(0, -foot.y / 2.0), foot)
+		_add_collision(center + rel + Vector2(0, -foot.y / 2.0), foot)
 
 
-func _add_interactive(type: String, tex_path: String, rel: Vector2, h: float, collide: bool, foot: Vector2, loot: Array) -> void:
+func _inter(center: Vector2, type: String, tex_path: String, rel: Vector2, h: float, collide: bool, foot: Vector2, loot: Array) -> void:
 	var path := "res://assets/%s.png" % tex_path
 	if not ResourceLoader.exists(path):
 		return
@@ -258,11 +311,11 @@ func _add_interactive(type: String, tex_path: String, rel: Vector2, h: float, co
 	var s: float = h / float(tex.get_height())
 	spr.scale = Vector2(s, s)
 	spr.offset = Vector2(0, -tex.get_height() / 2.0)
-	spr.position = INTERIOR_CENTER + rel
+	spr.position = center + rel
 	ysort.add_child(spr)
 	if collide:
-		_add_collision(INTERIOR_CENTER + rel + Vector2(0, -foot.y / 2.0), foot)
-	interactives.append({"type": type, "pos": INTERIOR_CENTER + rel, "spr": spr, "loot": loot, "taken": false})
+		_add_collision(center + rel + Vector2(0, -foot.y / 2.0), foot)
+	interactives.append({"type": type, "pos": center + rel, "spr": spr, "loot": loot, "taken": false})
 
 
 func _add_collision(pos: Vector2, size: Vector2) -> void:
@@ -324,60 +377,72 @@ func _create_player() -> void:
 		ph.color = Color(0.96, 0.86, 0.46)
 		player.add_child(ph)
 
-	cam_outside = Camera2D.new()
-	cam_outside.position_smoothing_enabled = true
-	cam_outside.position_smoothing_speed = 8.0
-	cam_outside.zoom = Vector2(CAM_ZOOM, CAM_ZOOM)
-	player.add_child(cam_outside)
-	cam_outside.make_current()
+	cam = Camera2D.new()
+	cam.position_smoothing_enabled = true
+	cam.position_smoothing_speed = 8.0
+	cam.zoom = Vector2(CAM_ZOOM, CAM_ZOOM)
+	player.add_child(cam)
+	cam.make_current()
 
 
-func _create_petals() -> void:
-	if not ResourceLoader.exists("res://assets/vfx/petal.png"):
-		return
-	var pet := CPUParticles2D.new()
-	pet.texture = load("res://assets/vfx/petal.png")
-	pet.amount = 22
-	pet.lifetime = 8.0
-	pet.preprocess = 4.0
-	pet.local_coords = false
-	pet.emission_shape = CPUParticles2D.EMISSION_SHAPE_RECTANGLE
-	pet.emission_rect_extents = Vector2(360, 18)
-	pet.position = Vector2(0, -200)
-	pet.direction = Vector2(0.5, 1)
-	pet.spread = 35.0
-	pet.gravity = Vector2(7, 16)
-	pet.initial_velocity_min = 12.0
-	pet.initial_velocity_max = 34.0
-	pet.angular_velocity_min = -70.0
-	pet.angular_velocity_max = 70.0
-	pet.scale_amount_min = 0.3
-	pet.scale_amount_max = 0.7
-	pet.color = Color(1, 1, 1, 0.85)
-	cam_outside.add_child(pet)
+func _set_cam_room(i: int) -> void:
+	var c: Vector2 = ROOM_CENTERS[i]
+	var hf: Vector2 = ROOM_HALVES[i]
+	cam.limit_left = int(c.x - hf.x)
+	cam.limit_right = int(c.x + hf.x)
+	cam.limit_top = int(c.y - hf.y)
+	cam.limit_bottom = int(c.y + hf.y)
 
 
-func _create_dust() -> void:
-	if not ResourceLoader.exists("res://assets/vfx/dust.png"):
-		return
-	var d := CPUParticles2D.new()
-	d.texture = load("res://assets/vfx/dust.png")
-	d.amount = 16
-	d.lifetime = 6.0
-	d.preprocess = 3.0
-	d.local_coords = false
-	d.emission_shape = CPUParticles2D.EMISSION_SHAPE_RECTANGLE
-	d.emission_rect_extents = Vector2(290, 165)
-	d.position = INTERIOR_CENTER
-	d.direction = Vector2(0, -1)
-	d.spread = 60.0
-	d.gravity = Vector2(2, -4)
-	d.initial_velocity_min = 3.0
-	d.initial_velocity_max = 9.0
-	d.scale_amount_min = 0.4
-	d.scale_amount_max = 1.0
-	d.color = Color(1, 1, 0.92, 0.45)
-	cam_inside.add_child(d)
+func _set_cam_free() -> void:
+	cam.limit_left = -10000000
+	cam.limit_right = 10000000
+	cam.limit_top = -10000000
+	cam.limit_bottom = 10000000
+
+
+func _create_particles() -> void:
+	if ResourceLoader.exists("res://assets/vfx/petal.png"):
+		petals = CPUParticles2D.new()
+		petals.texture = load("res://assets/vfx/petal.png")
+		petals.amount = 22
+		petals.lifetime = 8.0
+		petals.preprocess = 4.0
+		petals.local_coords = false
+		petals.emission_shape = CPUParticles2D.EMISSION_SHAPE_RECTANGLE
+		petals.emission_rect_extents = Vector2(360, 18)
+		petals.position = Vector2(0, -200)
+		petals.direction = Vector2(0.5, 1)
+		petals.spread = 35.0
+		petals.gravity = Vector2(7, 16)
+		petals.initial_velocity_min = 12.0
+		petals.initial_velocity_max = 34.0
+		petals.angular_velocity_min = -70.0
+		petals.angular_velocity_max = 70.0
+		petals.scale_amount_min = 0.3
+		petals.scale_amount_max = 0.7
+		petals.color = Color(1, 1, 1, 0.85)
+		cam.add_child(petals)
+	if ResourceLoader.exists("res://assets/vfx/dust.png"):
+		dust = CPUParticles2D.new()
+		dust.texture = load("res://assets/vfx/dust.png")
+		dust.amount = 16
+		dust.lifetime = 6.0
+		dust.preprocess = 3.0
+		dust.local_coords = false
+		dust.emission_shape = CPUParticles2D.EMISSION_SHAPE_RECTANGLE
+		dust.emission_rect_extents = Vector2(300, 175)
+		dust.position = Vector2(0, 0)
+		dust.direction = Vector2(0, -1)
+		dust.spread = 60.0
+		dust.gravity = Vector2(2, -4)
+		dust.initial_velocity_min = 3.0
+		dust.initial_velocity_max = 9.0
+		dust.scale_amount_min = 0.4
+		dust.scale_amount_max = 1.0
+		dust.color = Color(1, 1, 0.92, 0.45)
+		dust.emitting = false
+		cam.add_child(dust)
 
 
 func _create_hud() -> void:
@@ -437,7 +502,7 @@ func _create_hud() -> void:
 	toast_label = Label.new()
 	toast_label.add_theme_font_size_override("font_size", 46)
 	toast_label.modulate = Color(1, 1, 0.6)
-	toast_label.position = Vector2(660, 150)
+	toast_label.position = Vector2(640, 150)
 	toast_label.visible = false
 	layer.add_child(toast_label)
 
@@ -561,11 +626,19 @@ func _on_enter() -> void:
 	if near_house < 0 or inside:
 		return
 	inside = true
+	current_room = near_house
 	return_pos = PROPS[near_house].pos + Vector2(0, 60)
-	player.position = INTERIOR_CENTER + Vector2(0, 128)
+	var c: Vector2 = ROOM_CENTERS[current_room]
+	var hf: Vector2 = ROOM_HALVES[current_room]
+	player.position = c + Vector2(0, hf.y - 46)
 	player.velocity = Vector2.ZERO
 	facing = "up"
-	cam_inside.make_current()
+	_set_cam_room(current_room)
+	cam.reset_smoothing()
+	if petals != null:
+		petals.emitting = false
+	if dust != null:
+		dust.emitting = true
 	enter_btn.visible = false
 	exit_btn.visible = true
 
@@ -577,7 +650,12 @@ func _on_exit() -> void:
 	player.position = return_pos
 	player.velocity = Vector2.ZERO
 	facing = "down"
-	cam_outside.make_current()
+	_set_cam_free()
+	cam.reset_smoothing()
+	if petals != null:
+		petals.emitting = true
+	if dust != null:
+		dust.emitting = false
 	exit_btn.visible = false
 	act_btn.visible = false
 
@@ -644,13 +722,11 @@ func _physics_process(_delta: float) -> void:
 
 
 func _process(delta: float) -> void:
-	# vent (force variable, douce)
 	wind_phase += delta
 	wind_str = 0.55 + 0.28 * sin(wind_phase * 0.6) + 0.14 * sin(wind_phase * 1.7 + 1.0)
 	for sw in sway_sprites:
 		sw.spr.rotation = sin(wind_phase * 1.6 + sw.ph) * wind_str * 0.025
 
-	# toast (fondu)
 	if toast_t > 0.0:
 		toast_t -= delta
 		if toast_t < 0.6:
@@ -658,7 +734,6 @@ func _process(delta: float) -> void:
 		if toast_t <= 0.0:
 			toast_label.visible = false
 
-	# proximité contextuelle
 	var inv_open := inv_root != null and inv_root.visible
 	if inside:
 		near_interact = -1
@@ -737,21 +812,23 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _draw() -> void:
-	# --- INTERIEUR (loin) : fond + murs + sol ---
-	var ic := INTERIOR_CENTER
-	draw_rect(Rect2(ic + Vector2(-720, -480), Vector2(1440, 960)), Color(0.09, 0.08, 0.13))
-	if wall_tex != null:
-		draw_texture_rect(wall_tex, Rect2(ic + Vector2(-ROOM_HALF.x - 16, -ROOM_HALF.y - 46), Vector2(ROOM_HALF.x * 2 + 32, ROOM_HALF.y * 2 + 62)), true)
-	else:
-		draw_rect(Rect2(ic + Vector2(-ROOM_HALF.x - 16, -ROOM_HALF.y - 46), Vector2(ROOM_HALF.x * 2 + 32, ROOM_HALF.y * 2 + 62)), Color(0.5, 0.45, 0.39))
-	if floor_tex != null:
-		draw_texture_rect(floor_tex, Rect2(ic - ROOM_HALF, ROOM_HALF * 2), true)
-	else:
-		draw_rect(Rect2(ic - ROOM_HALF, ROOM_HALF * 2), Color(0.48, 0.33, 0.20))
-	draw_rect(Rect2(ic + Vector2(-ROOM_HALF.x, -ROOM_HALF.y), Vector2(ROOM_HALF.x * 2, 10)), Color(0, 0, 0, 0.18))
-	draw_rect(Rect2(ic + Vector2(-46, ROOM_HALF.y - 6), Vector2(92, 22)), Color(0.16, 0.11, 0.07))
+	# --- INTERIEURS (loin) ---
+	for i in range(ROOM_CENTERS.size()):
+		var c: Vector2 = ROOM_CENTERS[i]
+		var hf: Vector2 = ROOM_HALVES[i]
+		draw_rect(Rect2(c - hf - Vector2(110, 110), (hf + Vector2(110, 110)) * 2.0), Color(0.09, 0.08, 0.13))
+		if wall_tex != null:
+			draw_texture_rect(wall_tex, Rect2(c + Vector2(-hf.x - 16, -hf.y - 46), Vector2(hf.x * 2 + 32, hf.y * 2 + 62)), true, ROOM_WALLTINT[i])
+		else:
+			draw_rect(Rect2(c + Vector2(-hf.x - 16, -hf.y - 46), Vector2(hf.x * 2 + 32, hf.y * 2 + 62)), Color(0.5, 0.45, 0.39))
+		if floor_tex != null:
+			draw_texture_rect(floor_tex, Rect2(c - hf, hf * 2.0), true, ROOM_FLOORTINT[i])
+		else:
+			draw_rect(Rect2(c - hf, hf * 2.0), Color(0.48, 0.33, 0.20))
+		draw_rect(Rect2(c + Vector2(-hf.x, -hf.y), Vector2(hf.x * 2, 10)), Color(0, 0, 0, 0.18))
+		draw_rect(Rect2(c + Vector2(-46, hf.y - 6), Vector2(92, 22)), Color(0.16, 0.11, 0.07))
 
-	# --- EXTERIEUR : herbe + variations + terre ---
+	# --- EXTERIEUR ---
 	if ground_tex != null:
 		draw_texture_rect(ground_tex, Rect2(-WORLD_HALF, -WORLD_HALF, WORLD_HALF * 2, WORLD_HALF * 2), true)
 	else:
