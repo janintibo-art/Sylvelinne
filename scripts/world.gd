@@ -100,15 +100,41 @@ var touch_active: bool = false
 var touch_origin: Vector2 = Vector2.ZERO
 var touch_current: Vector2 = Vector2.ZERO
 
+var shadow_tex: Texture2D
+var shadow_layer: Node2D
+
+const POSTFX_SHADER := """
+shader_type canvas_item;
+uniform sampler2D screen_tex : hint_screen_texture, filter_linear;
+uniform float contrast = 1.14;
+uniform float saturation = 1.22;
+uniform float brightness = 1.02;
+uniform float vignette = 0.34;
+void fragment() {
+	vec3 col = texture(screen_tex, SCREEN_UV).rgb;
+	col *= brightness;
+	col = (col - vec3(0.5)) * contrast + vec3(0.5);
+	float l = dot(col, vec3(0.299, 0.587, 0.114));
+	col = mix(vec3(l), col, saturation);
+	vec2 d = SCREEN_UV - vec2(0.5);
+	float vig = smoothstep(0.85, 0.16, dot(d, d) * 3.0);
+	col *= mix(1.0, vig, vignette);
+	COLOR = vec4(clamp(col, vec3(0.0), vec3(1.0)), 1.0);
+}
+"""
+
 
 func _ready() -> void:
 	texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
 	_load_textures()
 	_load_ground()
 	orb_tex = _make_orb()
+	shadow_tex = _make_shadow()
 	for it in START_ITEMS:
 		bag.append({"icon": it.icon, "name": it.name, "qty": it.qty})
 	_build_ground_deco()
+	shadow_layer = Node2D.new()
+	add_child(shadow_layer)
 	ysort = Node2D.new()
 	ysort.y_sort_enabled = true
 	add_child(ysort)
@@ -119,6 +145,7 @@ func _ready() -> void:
 	_create_hud()
 	_create_inventory()
 	_create_particles()
+	_create_postfx()
 	queue_redraw()
 
 
@@ -198,6 +225,7 @@ func _spawn_props() -> void:
 		spr.position = pr.pos
 		ysort.add_child(spr)
 		_add_collision(pr.pos + Vector2(0, -pr.foot.y / 2.0), pr.foot)
+		_add_ground_shadow(pr.pos, pr.foot.x * 1.05)
 		if String(pr.tex).contains("arbre"):
 			sway_sprites.append({"spr": spr, "ph": randf() * TAU})
 
@@ -320,6 +348,7 @@ func _create_vendor() -> void:
 		node.add_child(sprite_node)
 	else:
 		node.add_child(_placeholder_vendor())
+	_add_child_shadow(node, 60.0)
 	_add_collision(vpos + Vector2(0, -12), Vector2(44, 24))
 	var brain = NpcBrainScript.new()
 	vendor = {"node": node, "sprite": sprite_node, "frames": frames, "brain": brain, "pos": vpos, "t": 0.0, "cur": "idle", "fi": 0, "ft": 0.0, "playing": false, "fps": 16.0}
@@ -369,6 +398,7 @@ func _furni(center: Vector2, name: String, rel: Vector2, h: float, collide: bool
 	ysort.add_child(spr)
 	if collide:
 		_add_collision(center + rel + Vector2(0, -foot.y / 2.0), foot)
+		_add_ground_shadow(center + rel, foot.x * 1.05)
 
 
 func _inter(center: Vector2, type: String, tex_path: String, rel: Vector2, h: float, collide: bool, foot: Vector2, loot: Array) -> void:
@@ -385,6 +415,9 @@ func _inter(center: Vector2, type: String, tex_path: String, rel: Vector2, h: fl
 	ysort.add_child(spr)
 	if collide:
 		_add_collision(center + rel + Vector2(0, -foot.y / 2.0), foot)
+		_add_ground_shadow(center + rel, foot.x * 1.05)
+	else:
+		_add_ground_shadow(center + rel, 32.0)
 	interactives.append({"type": type, "pos": center + rel, "spr": spr, "loot": loot, "taken": false})
 
 
@@ -413,6 +446,59 @@ func _make_orb() -> Texture2D:
 				col = Color(1.0, 1.0, 0.92, a)
 			img.set_pixel(x, y, col)
 	return ImageTexture.create_from_image(img)
+
+
+func _make_shadow() -> Texture2D:
+	var s := 96
+	var img := Image.create(s, s, false, Image.FORMAT_RGBA8)
+	var c := Vector2(s / 2.0, s / 2.0)
+	for y in s:
+		for x in s:
+			var d := Vector2(x, y).distance_to(c) / (s / 2.0)
+			var a: float = clampf(1.0 - d, 0.0, 1.0)
+			a = a * a * 0.95
+			img.set_pixel(x, y, Color(0, 0, 0, a))
+	return ImageTexture.create_from_image(img)
+
+
+func _add_ground_shadow(pos: Vector2, width: float) -> void:
+	if shadow_tex == null or shadow_layer == null:
+		return
+	var sh := Sprite2D.new()
+	sh.texture = shadow_tex
+	var sc := (width * 1.55) / float(shadow_tex.get_width())
+	sh.scale = Vector2(sc, sc * 0.42)
+	sh.position = pos + Vector2(0, -2)
+	sh.modulate = Color(0, 0, 0, 0.30)
+	shadow_layer.add_child(sh)
+
+
+func _add_child_shadow(node: Node2D, width: float) -> void:
+	if shadow_tex == null:
+		return
+	var sh := Sprite2D.new()
+	sh.texture = shadow_tex
+	var sc := (width * 1.55) / float(shadow_tex.get_width())
+	sh.scale = Vector2(sc, sc * 0.42)
+	sh.position = Vector2(0, -2)
+	sh.z_index = -1
+	sh.modulate = Color(0, 0, 0, 0.30)
+	node.add_child(sh)
+
+
+func _create_postfx() -> void:
+	var layer := CanvasLayer.new()
+	layer.layer = 3
+	add_child(layer)
+	var rect := ColorRect.new()
+	rect.set_anchors_preset(Control.PRESET_FULL_RECT)
+	rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var shd := Shader.new()
+	shd.code = POSTFX_SHADER
+	var mat := ShaderMaterial.new()
+	mat.shader = shd
+	rect.material = mat
+	layer.add_child(rect)
 
 
 func dir8_from(v: Vector2) -> String:
@@ -447,6 +533,7 @@ func _create_player() -> void:
 		ph.color = Color(0.96, 0.86, 0.46)
 		player.add_child(ph)
 
+	_add_child_shadow(player, 60.0)
 	cam = Camera2D.new()
 	cam.position_smoothing_enabled = true
 	cam.position_smoothing_speed = 8.0
@@ -517,6 +604,7 @@ func _create_particles() -> void:
 
 func _create_hud() -> void:
 	var layer := CanvasLayer.new()
+	layer.layer = 5
 	add_child(layer)
 
 	var label := Label.new()
