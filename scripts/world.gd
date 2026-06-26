@@ -172,6 +172,10 @@ func _ready() -> void:
 	_create_npcs()
 	_create_trapdoor()
 	_create_creatures()
+	_load_dungeon_textures()
+	dungeon_root = Node2D.new()
+	dungeon_root.y_sort_enabled = true
+	add_child(dungeon_root)
 	_create_hud()
 	_create_inventory()
 	_create_particles()
@@ -476,7 +480,7 @@ func _create_creature(home: Vector2, slug: String, height: float, speed: float) 
 func _update_creatures(delta: float) -> void:
 	for c in creatures:
 		var node: Node2D = c["node"]
-		if inside:
+		if inside or in_dungeon:
 			node.visible = false
 			continue
 		node.visible = true
@@ -949,6 +953,13 @@ func _show_toast(msg: String) -> void:
 
 
 func _on_enter() -> void:
+	if in_dungeon:
+		if near_dstair == 0:
+			_dungeon_change_floor(1)
+		return
+	if not inside and not in_dungeon and near_tree and near_house < 0 and not near_trap:
+		_enter_dungeon()
+		return
 	if inside or (near_house < 0 and not near_trap):
 		return
 	inside = true
@@ -980,6 +991,12 @@ func _on_enter() -> void:
 
 
 func _on_exit() -> void:
+	if in_dungeon:
+		if near_dstair == 1:
+			_dungeon_change_floor(-1)
+		elif near_dstair == 2:
+			_exit_dungeon()
+		return
 	if not inside:
 		return
 	inside = false
@@ -999,6 +1016,9 @@ func _on_exit() -> void:
 
 
 func _on_act() -> void:
+	if in_dungeon:
+		_dungeon_act()
+		return
 	if near_interact < 0:
 		return
 	var o: Dictionary = interactives[near_interact]
@@ -1078,7 +1098,9 @@ func _process(delta: float) -> void:
 			toast_label.visible = false
 
 	var inv_open := inv_root != null and inv_root.visible
-	if inside:
+	if in_dungeon:
+		_dungeon_proximity(delta, inv_open)
+	elif inside:
 		near_interact = -1
 		for i in range(interactives.size()):
 			var o: Dictionary = interactives[i]
@@ -1101,11 +1123,16 @@ func _process(delta: float) -> void:
 		near_trap = false
 		if not trapdoor.is_empty() and player.position.distance_to(trapdoor.pos) < 130.0:
 			near_trap = true
+		near_tree = false
+		if player.position.distance_to(PROPS[4].pos) < 185.0:
+			near_tree = true
 		if near_house >= 0:
 			enter_btn.text = "Entrer"
 		elif near_trap:
 			enter_btn.text = "⬇️ Descendre"
-		enter_btn.visible = (near_house >= 0 or near_trap) and not inv_open
+		elif near_tree:
+			enter_btn.text = "🌳 Entrer dans l'Arbre"
+		enter_btn.visible = (near_house >= 0 or near_trap or near_tree) and not inv_open
 
 	var active_npc = null
 	if inside:
@@ -1156,6 +1183,8 @@ func _process(delta: float) -> void:
 
 	_update_projectiles(delta)
 	_update_creatures(delta)
+	if in_dungeon:
+		_update_dungeon_monsters(delta)
 	if sprite == null:
 		return
 
@@ -1210,6 +1239,9 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _draw() -> void:
+	if in_dungeon:
+		_draw_dungeon()
+		return
 	# --- INTERIEURS (loin) ---
 	for i in range(ROOM_CENTERS.size()):
 		var c: Vector2 = ROOM_CENTERS[i]
@@ -1237,3 +1269,784 @@ func _draw() -> void:
 	if patch_dirt != null:
 		for d in dirt_spots:
 			draw_texture_rect(patch_dirt, Rect2(d.pos - d.size * 0.5, d.size), false)
+
+
+# ====================== DONJON ARBRE-MONDE ======================
+const TILE: int = 128
+const DUNGEON_ORIGIN: Vector2 = Vector2(-60000, -60000)
+const DUNGEON_ZOOM: float = 2.0
+const DUNGEON_FLOORS: Array = [
+	[
+		"#####################",
+		"#v#K......#.........#",
+		"#.#####.#.#.#######.#",
+		"#.#...#.#.#.#....k#.#",
+		"#.#.#.#.###.#.#####.#",
+		"#.#.#.#..m..S.#...#.#",
+		"#.#.#.#########.#L#.#",
+		"#...#...........#...#",
+		"###################.#",
+		"#...#.......#.......#",
+		"#.#.#.#####.#.#######",
+		"#.#T#.#...#...#C....#",
+		"#.###.#.#.#########.#",
+		"#.........E.........#",
+		"#####################"
+	],
+	[
+		"#######################",
+		"#.#.....#.........#C..#",
+		"#.#.###.#####.###.###.#",
+		"#...#.#.....#...#.....#",
+		"###.#.#####.###.#####.#",
+		"#kSG....#C#.#...#...#.#",
+		"###.###.#.#.#.###.#.#.#",
+		"#...#.....#...#...#...#",
+		"#.###.###.#####.#######",
+		"#...#.......#v#.#m..#P#",
+		"###.#######.#.#.#.#.#.#",
+		"#...#...#...#.#...#...#",
+		"#.###.#.#.#..T#.#####.#",
+		"#.....#.#.....#.......#",
+		"#.#.###.#######.#.#.###",
+		"#.....#....^....#.....#",
+		"#######################"
+	],
+	[
+		"#########################",
+		"#.#.#........L....#...#C#",
+		"#...#.#.###.#####.#.#.#.#",
+		"#.#.#.#.....#...#...#...#",
+		"#.#.#.#####.###.#######.#",
+		"#.#...#...#.#...#..m#...#",
+		"#.#.###.#.#.#...###.#.###",
+		"#.#.....#.#.#.#...#.#.#.#",
+		"#.#.#####.#.#.###.#.#.#.#",
+		"#.#.#...#.#.#.T.#...#...#",
+		"#.###.#.###.#.#.###.###.#",
+		"#...#.#...#.#.#...#.#...#",
+		"###.#.###.#.#.###.###.###",
+		"#v#.#..T#...#...#m....#K#",
+		"#.#.###.#####.#.#####.#.#",
+		"#.......#...^...........#",
+		"#########################"
+	],
+	[
+		"###########################",
+		"#v........#...#...........#",
+		"#########.#.#.#.#######.#.#",
+		"#......P#.#.#.#.m.#...#.#.#",
+		"#.###.###.#.#####.#.#.#.###",
+		"#.#k#.....#.#.....#.#.#...#",
+		"#.#S#######.#.#####.#.###.#",
+		"#...#.....#.........#.#.#.#",
+		"###.#.###.###.#.#####.#.#.#",
+		"#.#...#C#...#...#.......#.#",
+		"#.#.###.###...#.#####.###.#",
+		"#...#.....#...#.....#.#...#",
+		"###.#.###.#########.#.#.###",
+		"#...#.#.#.m.#.....#...#...#",
+		"#.###.#.#.###.###.###.###.#",
+		"#.#...#.#.#...#C#...#.....#",
+		"#.#..##T#...#.#.###.#####.#",
+		"#.......#....^.G..#....T..#",
+		"###########################"
+	],
+	[
+		"###########################",
+		"#.#.......#T.....L..m.#...#",
+		"#.###.###.#.#####.###.#.#.#",
+		"#.....#C#.#.....#.#...#.#.#",
+		"#.#.###.#.###.###.#.###.#.#",
+		"#v..#.....#...#...#.#...#.#",
+		"#####.#########.###.#####.#",
+		"#..k#...#.......#.#...#...#",
+		"#S#####.###.#####.#.#.#m###",
+		"#.....#.....#.....#.#.....#",
+		"#.###.#######.###.#.#.###.#",
+		"#...........#.#.....#.....#",
+		"###.#####.#.#T#.###.#####.#",
+		"#...#.T...#...#.#...#.....#",
+		"#.###.#######.#.#.###.#####",
+		"#.#...#...#...#...#...#...#",
+		"#.#.###.#.#.#.#.###.###.#.#",
+		"#.#.#...#...#.....#...#C#.#",
+		"#.#.#.###########.###.###.#",
+		"#.#..........^.K#.......m.#",
+		"###########################"
+	],
+	[
+		"#############################",
+		"#v....#......T#C........#...#",
+		"#####.#####...###.#.###.#.###",
+		"#...#.......#.....#.#P#.#...#",
+		"##..###########.###.#.#.###.#",
+		"#.......#.....#....m#...#...#",
+		"#.#####.#.###.####.##.###..##",
+		"#.#...#.#...#...#...#.#.....#",
+		"#.###m#.###.###.#.#.#.#.###.#",
+		"#.#...#...#.#.#.#...#.#C#T.G#",
+		"#.#.#####.#.#.#.#.#.#.###.#.#",
+		"#.#.........#.....#T#.....#.#",
+		"#.#.#.###############.#.###.#",
+		"#...#.....#m........#...#...#",
+		"#.#.##.##.#.#.#####.#..##.###",
+		"#.#.#.....#...#...#.#...#...#",
+		"#.#.#######.###.#.#.#.#.###.#",
+		"#.#.........#...#...#.#.#...#",
+		"#.#######.###.#######.#.#.###",
+		"#.............^.......#....C#",
+		"#############################"
+	],
+	[
+		"###############################",
+		"#.#.....#.......#............T#",
+		"#.#.###.###.#####.#####.#####.#",
+		"#...#.#...#.....#.#...#.#...#.#",
+		"#####.###.#.###.#.#.#.#.#.#.#.#",
+		"#.....#...#.........#.#...#.#T#",
+		"#.###.#.#####.#######.#####.#.#",
+		"#...#C#.#k#...#...#.#...#...#.#",
+		"#.#.###.#.#.###.#.#.#.###.###.#",
+		"#.#.....#.#...#.#.#.#.#...#.#.#",
+		"#.#######S###.#...#.#.#.###.#.#",
+		"#.#...#K....#.#.#.#...#.#...#.#",
+		"#.#.#.###.###.#.#.#####.#.###L#",
+		"#.#.#...#...#.#.#...#...#....m#",
+		"#.#.###.#.#.#.#.#.#.#.###.#####",
+		"#.#.#...#.#.#.#...#.#.#.#..m#.#",
+		"#.#.#T#####.#.##..#.#.#m###.#.#",
+		"#.#.#.....#.m.#...#...#.T.#...#",
+		"#.#.#####.#.###.#######.#.###.#",
+		"#...#...#.#...#.....#v#.#.#...#",
+		"#####.#.#.#########.#.#.#.#.###",
+		"#.....#........^....#...#....C#",
+		"###############################"
+	],
+	[
+		"###############################",
+		"#v#.......#.........#.........#",
+		"#.#.#.###.#T#T###.#.#.###.#####",
+		"#.#P#.#.#.#.....#.....#.#.....#",
+		"#.###.#.#.#.#####.###.#.#####.#",
+		"#.....#.#.#.....#.#kS...#.....#",
+		"#######.#.#.###.#.#####.#.#####",
+		"#.......#...#.#.#.....#.#...T.#",
+		"#.#.#########.#.####..#.#####.#",
+		"#...#.....#.....#...........#.#",
+		"###.#.###...###########.#.#.#.#",
+		"#...#.#...#.#.........#.#...#.#",
+		"#.#.#.#.###.###.###.#.#.###.#.#",
+		"#...#.#.....#...#C#...#.....#.#",
+		"#.#.#.#######.###.#.#########.#",
+		"#.#...#.......#.#...#...#.....#",
+		"#m#####m#.#####.#.###.#.#.###.#",
+		"#.....#.#.#.........#.#.#...#.#",
+		"##.##.###.#########.#.#.###...#",
+		"#T..#...#..........m..#...#.#.#",
+		"#.#.###.#######.#########.#.#.#",
+		"#.#C#.........#...#..C#...#.#.#",
+		"#.###.###.#.#.###..G###.###.#.#",
+		"#.........m....^..#.........#.#",
+		"###############################"
+	],
+	[
+		"#################################",
+		"#.#.#.....L...........#...#.....#",
+		"#.#.#.###.###########.#.###.###.#",
+		"#.#.#.#...#...#v....#.#.#.....#.#",
+		"#.#.#.#.#.#.#.#####.#.#.#.##T##.#",
+		"#..m#..m#...#.....#.#...#.#T.m#.#",
+		"#.#.###.#.#######.#.#.###.#.#.#.#",
+		"#.#...#T#......C#.#...#...#.#.#.#",
+		"#.#.###.###.#.###.#####.###.#.#.#",
+		"#.#...#...#.#.#...#.m...#...#...#",
+		"#.#.#.###.#...#.###.#####.#####.#",
+		"#.#.#...#.#.#.#.....#...#...#.#.#",
+		"#.###.###.###.#######.#.###.#.#.#",
+		"#...#...#.#...#.......#...#.#T..#",
+		"###.#.#...#.#.#.#####.#####.#.###",
+		"#K#T#...#...#.#....C#.#.....#.#.#",
+		"#.#.#...#####.#######.#.#####.#.#",
+		"#...#.#.............#.#...#.....#",
+		"#.###.##.########.#...###.#.#####",
+		"#.#.........#...#.....#m..#.....#",
+		"#.#.#######.#.###.#####.###.###.#",
+		"#.#.#.......#.....#...........#.#",
+		"#.#.###.###########...#.#######.#",
+		"#.#...#.........#...#.#.........#",
+		"#.###...#.#####.#.#.#.#######.#.#",
+		"#.....#...#.....^.#...........#.#",
+		"#################################"
+	],
+	[
+		"###################################",
+		"#B#.....#...#.m.....#.......#.....#",
+		"#C###.#.#.###.#####.#.###.#.#.###.#",
+		"#...m.#.#...#...#.....#k#.#...#...#",
+		"#######.###.###.#.#####S#.#########",
+		"#.#.....#...#...#...#...#.........#",
+		"#.#.#####.###.###.#T#.#.#########.#",
+		"#.#.#.............#...#..C#.....#.#",
+		"#.#.#####.#####.###.m######.m##.#.#",
+		"#.#...#..G#T..#.#.....#...#.....#.#",
+		"#.###.#.#.#.#.#.#.##..#.#.###.#.#.#",
+		"#...#...#...#.#.#.#...#.#.....#...#",
+		"###.#########.###.#.###.###########",
+		"#.....#.#...#.....#...#.....#.....#",
+		"#.###.#.#.#.#########.#.###.#.#.#.#",
+		"#...#..m#.#.........#.#....T#.#...#",
+		"#.#.#####.###.#.#####.###.#.#.#.###",
+		"#.#.......#...#...#...#.T.....#...#",
+		"#T#########.#####.#.###.#########.#",
+		"#.#...#...#.....#...#...#...#.....#",
+		"#.#.#.#.#.#.#.#######.###.#.#.###.#",
+		"#...#...#.#P#.......#.#...#...#...#",
+		"#########.###.#.###.#.#.#######.###",
+		"#...#...#...#.#.#.#.#.#.....#C#.#.#",
+		"#.###.#.###.###.#.#.#######.#.#.#.#",
+		"#...#.#.#...#...#.#.........#.#.#.#",
+		"#.#.#.#.#.###.###.###########.#.#.#",
+		"#.#...#.......#..^................#",
+		"###################################"
+	]
+]
+
+var in_dungeon: bool = false
+var dungeon_floor: int = 0
+var dungeon_root: Node2D
+var dgrid: Array = []
+var dcols: int = 0
+var drows: int = 0
+var dfeatures: Array = []
+var dmonsters: Array = []
+var d_has_key: bool = false
+var d_lever: bool = false
+var dungeon_return_pos: Vector2 = Vector2.ZERO
+var near_tree: bool = false
+var near_dstair: int = -1
+var near_dfeat: int = -1
+var near_dsearch: bool = false
+var dtrap_cd: float = 0.0
+var dfloor_tex: Texture2D
+var dwall_tex: Texture2D
+var stairs_down_tex: Texture2D
+var stairs_up_tex: Texture2D
+var door_tex: Texture2D
+var gate_tex: Texture2D
+var lever_tex: Texture2D
+
+
+func _try_load(p: String) -> Texture2D:
+	return load(p) if ResourceLoader.exists(p) else null
+
+
+func _load_dungeon_textures() -> void:
+	dfloor_tex = _try_load("res://assets/tilesets/dungeon_floor.png")
+	dwall_tex = _try_load("res://assets/tilesets/dungeon_wall.png")
+	stairs_down_tex = _try_load("res://assets/props/stairs_down.png")
+	stairs_up_tex = _try_load("res://assets/props/stairs_up.png")
+	door_tex = _try_load("res://assets/props/door_wood.png")
+	gate_tex = _try_load("res://assets/props/gate_iron.png")
+	lever_tex = _try_load("res://assets/props/lever.png")
+
+
+func _cell_center(r: int, c: int) -> Vector2:
+	return DUNGEON_ORIGIN + Vector2(c * TILE + TILE / 2.0, r * TILE + TILE / 2.0)
+
+
+func _player_cell() -> Vector2i:
+	var rel := player.position - DUNGEON_ORIGIN
+	return Vector2i(int(floor(rel.x / TILE)), int(floor(rel.y / TILE)))
+
+
+func _find_feature_cell(glyph: String) -> Vector2i:
+	for r in range(drows):
+		for c in range(dgrid[r].size()):
+			if dgrid[r][c] == glyph:
+				return Vector2i(c, r)
+	return Vector2i(-1, -1)
+
+
+func _dwall_collider(r: int, c: int) -> StaticBody2D:
+	var sb := StaticBody2D.new()
+	var cs := CollisionShape2D.new()
+	var rs := RectangleShape2D.new()
+	rs.size = Vector2(TILE, TILE)
+	cs.shape = rs
+	sb.add_child(cs)
+	sb.position = _cell_center(r, c)
+	dungeon_root.add_child(sb)
+	return sb
+
+
+func _dwall_band(r: int, c0: int, c1: int) -> StaticBody2D:
+	var n := c1 - c0 + 1
+	var sb := StaticBody2D.new()
+	var cs := CollisionShape2D.new()
+	var rs := RectangleShape2D.new()
+	rs.size = Vector2(n * TILE, TILE)
+	cs.shape = rs
+	sb.add_child(cs)
+	var cx := DUNGEON_ORIGIN.x + (c0 + c1 + 1) * TILE / 2.0
+	var cy := DUNGEON_ORIGIN.y + r * TILE + TILE / 2.0
+	sb.position = Vector2(cx, cy)
+	dungeon_root.add_child(sb)
+	return sb
+
+
+func _load_item_tex(icon: String) -> Texture2D:
+	for base in ["res://assets/items/%s.png", "res://assets/furniture/%s.png"]:
+		var p: String = base % icon
+		if ResourceLoader.exists(p):
+			return load(p)
+	return null
+
+
+func _dfeat_sprite(tex: Texture2D, center: Vector2, height: float, upright: bool, tint: Color) -> Node2D:
+	if tex == null:
+		return null
+	var node := Node2D.new()
+	node.position = center
+	var spr := Sprite2D.new()
+	spr.texture = tex
+	var sc: float = height / float(tex.get_height())
+	spr.scale = Vector2(sc, sc)
+	spr.modulate = tint
+	if upright:
+		spr.offset = Vector2(0, -tex.get_height() / 2.0)
+		node.add_child(spr)
+		_add_child_shadow(node, height * 0.5)
+	else:
+		node.add_child(spr)
+	ysort.add_child(node)
+	return node
+
+
+func _dfeat_sprite_item(icon: String, center: Vector2, height: float, upright: bool = true, tint: Color = Color(1, 1, 1)) -> Node2D:
+	return _dfeat_sprite(_load_item_tex(icon), center, height, upright, tint)
+
+
+func _floor_mob_slug(n: int) -> String:
+	var rota := ["araignee_racine", "esprit_sylve", "ourson_souche", "grenouille_brume",
+		"hibou_statue", "sanglier_ronce", "esprit_sylve", "hibou_statue",
+		"araignee_racine", "esprit_sylve"]
+	if n >= 0 and n < rota.size():
+		return rota[n]
+	return "esprit_sylve"
+
+
+func _chest_loot(n: int) -> Array:
+	if n == 0:
+		return [{"icon": "grimoire", "name": "Page d'Aldevane", "qty": 1}, {"icon": "potion_soin", "name": "Potion de soin", "qty": 1}]
+	if n >= 8:
+		return [{"icon": "grimoire", "name": "Larme d'Aldevane", "qty": 1}, {"icon": "cristal", "name": "Eclat de seve", "qty": 2}, {"icon": "potion_soin", "name": "Potion de soin", "qty": 2}]
+	if n % 2 == 0:
+		return [{"icon": "cristal", "name": "Eclat de seve", "qty": 1}, {"icon": "potion_soin", "name": "Potion de soin", "qty": 1}]
+	return [{"icon": "bourse", "name": "Bourse de glands", "qty": 1}, {"icon": "potion_mana", "name": "Potion de mana", "qty": 1}]
+
+
+func _spawn_dungeon_monster(r: int, c: int, slug: String, boss: bool) -> void:
+	var home := _cell_center(r, c)
+	var idle_path := "res://assets/monsters/%s/idle.png" % slug
+	if not ResourceLoader.exists(idle_path):
+		return
+	var node := Node2D.new()
+	node.position = home
+	ysort.add_child(node)
+	var walk: Array = []
+	var i := 1
+	while ResourceLoader.exists("res://assets/monsters/%s/walk_%02d.png" % [slug, i]):
+		walk.append(load("res://assets/monsters/%s/walk_%02d.png" % [slug, i]))
+		i += 1
+	var itex: Texture2D = load(idle_path)
+	var spr := Sprite2D.new()
+	spr.texture = itex
+	var hh: float = 185.0 if boss else 112.0
+	var sc: float = hh / float(itex.get_height())
+	spr.scale = Vector2(sc, sc)
+	spr.offset = Vector2(0, -itex.get_height() / 2.0)
+	node.add_child(spr)
+	_add_child_shadow(node, hh * 0.5)
+	if boss:
+		var lbl := Label.new()
+		lbl.text = "Gardien de Cendre"
+		lbl.add_theme_color_override("font_color", Color(1, 0.85, 0.55))
+		lbl.add_theme_font_size_override("font_size", 22)
+		lbl.position = Vector2(-70, -hh - 30)
+		node.add_child(lbl)
+	dmonsters.append({"node": node, "spr": spr, "idle": itex, "walk": walk, "home": home, "target": home, "speed": 0.0 if boss else 42.0, "state": "idle", "t": randf_range(0.6, 2.5), "ft": 0.0, "base_sc": sc, "boss": boss})
+
+
+func _clear_dungeon_floor() -> void:
+	for f in dfeatures:
+		if f.get("node") != null:
+			f["node"].queue_free()
+		if f.get("collider") != null:
+			f["collider"].queue_free()
+	for m in dmonsters:
+		if m.get("node") != null:
+			m["node"].queue_free()
+	if dungeon_root != null:
+		for ch in dungeon_root.get_children():
+			ch.queue_free()
+	dfeatures = []
+	dmonsters = []
+
+
+func _build_dungeon_floor(n: int, arrival_glyph: String) -> void:
+	_clear_dungeon_floor()
+	dungeon_floor = n
+	d_lever = false
+	var grid: Array = DUNGEON_FLOORS[n]
+	dgrid = []
+	for r in range(grid.size()):
+		var row: String = grid[r]
+		var arr: Array = []
+		for c in range(row.length()):
+			arr.append(row[c])
+		dgrid.append(arr)
+	drows = dgrid.size()
+	dcols = 0
+	for r in range(drows):
+		dcols = max(dcols, dgrid[r].size())
+	# Murs '#' : fusionnes en bandes horizontales (1 collider par segment)
+	# au lieu d'un par case -> beaucoup moins de StaticBody2D sur les grands etages.
+	for r in range(drows):
+		var c0: int = -1
+		var cc: int = 0
+		while cc < dgrid[r].size():
+			if dgrid[r][cc] == "#":
+				if c0 < 0:
+					c0 = cc
+			else:
+				if c0 >= 0:
+					_dwall_band(r, c0, cc - 1)
+					c0 = -1
+			cc += 1
+		if c0 >= 0:
+			_dwall_band(r, c0, dgrid[r].size() - 1)
+	for r in range(drows):
+		for c in range(dgrid[r].size()):
+			var ch: String = dgrid[r][c]
+			var center := _cell_center(r, c)
+			match ch:
+				"S":
+					var col := _dwall_collider(r, c)
+					dfeatures.append({"kind": "secret", "r": r, "c": c, "pos": center, "node": null, "collider": col, "done": false})
+				"E":
+					var ne := _dfeat_sprite(stairs_up_tex, center, 112.0, false, Color(1.15, 1.0, 0.65))
+					dfeatures.append({"kind": "exit", "r": r, "c": c, "pos": center, "node": ne})
+				"v":
+					var nd := _dfeat_sprite(stairs_down_tex, center, 120.0, false, Color(1, 1, 1))
+					dfeatures.append({"kind": "down", "r": r, "c": c, "pos": center, "node": nd})
+				"^":
+					var nu := _dfeat_sprite(stairs_up_tex, center, 120.0, false, Color(1, 1, 1))
+					dfeatures.append({"kind": "up", "r": r, "c": c, "pos": center, "node": nu})
+				"L":
+					var cl := _dwall_collider(r, c)
+					var ndl := _dfeat_sprite(door_tex, center, 150.0, true, Color(1, 1, 1))
+					dfeatures.append({"kind": "door", "r": r, "c": c, "pos": center, "node": ndl, "collider": cl, "done": false})
+				"G":
+					var cg := _dwall_collider(r, c)
+					var ng := _dfeat_sprite(gate_tex, center, 150.0, true, Color(1, 1, 1))
+					dfeatures.append({"kind": "gate", "r": r, "c": c, "pos": center, "node": ng, "collider": cg, "done": false})
+				"K":
+					var nk := _dfeat_sprite_item("cle", center, 56.0)
+					dfeatures.append({"kind": "key", "r": r, "c": c, "pos": center, "node": nk, "done": false})
+				"C":
+					var nc := _dfeat_sprite_item("coffre", center, 80.0)
+					dfeatures.append({"kind": "chest", "r": r, "c": c, "pos": center, "node": nc, "done": false, "loot": _chest_loot(n)})
+				"k":
+					var nt2 := _dfeat_sprite_item("coffre", center, 80.0, true, Color(1.15, 1.0, 0.55))
+					dfeatures.append({"kind": "chest", "r": r, "c": c, "pos": center, "node": nt2, "done": false, "loot": [{"icon": "potion_soin", "name": "Elixir de seve", "qty": 2}]})
+				"T":
+					var ntp := _dfeat_sprite_item("piege", center, 96.0, false)
+					dfeatures.append({"kind": "trap", "r": r, "c": c, "pos": center, "node": ntp, "armed": true})
+				"P":
+					var nlv := _dfeat_sprite(lever_tex, center, 112.0, true, Color(1, 1, 1))
+					dfeatures.append({"kind": "lever", "r": r, "c": c, "pos": center, "node": nlv, "done": false})
+				"m":
+					_spawn_dungeon_monster(r, c, _floor_mob_slug(n), false)
+				"B":
+					_spawn_dungeon_monster(r, c, "sentinelle_cendre", true)
+	var spawn := _find_feature_cell(arrival_glyph)
+	if spawn.x >= 0:
+		player.position = _cell_center(spawn.y, spawn.x)
+	player.velocity = Vector2.ZERO
+	facing = "down"
+	cam.limit_left = int(DUNGEON_ORIGIN.x)
+	cam.limit_top = int(DUNGEON_ORIGIN.y - 80.0)
+	cam.limit_right = int(DUNGEON_ORIGIN.x + dcols * TILE)
+	cam.limit_bottom = int(DUNGEON_ORIGIN.y + drows * TILE)
+	cam.reset_smoothing()
+	queue_redraw()
+
+
+func _enter_dungeon() -> void:
+	in_dungeon = true
+	dungeon_floor = 0
+	d_has_key = false
+	dungeon_return_pos = PROPS[4].pos + Vector2(0, 70)
+	cam.zoom = Vector2(DUNGEON_ZOOM, DUNGEON_ZOOM)
+	if petals != null:
+		petals.emitting = false
+	if dust != null:
+		dust.emitting = true
+	enter_btn.visible = false
+	_build_dungeon_floor(0, "E")
+	_show_toast("Tu penetres dans l'Arbre-Monde...")
+
+
+func _exit_dungeon() -> void:
+	in_dungeon = false
+	_clear_dungeon_floor()
+	cam.zoom = Vector2(CAM_ZOOM, CAM_ZOOM)
+	_set_cam_free()
+	player.position = dungeon_return_pos
+	player.velocity = Vector2.ZERO
+	facing = "down"
+	cam.reset_smoothing()
+	if petals != null:
+		petals.emitting = true
+	if dust != null:
+		dust.emitting = false
+	enter_btn.visible = false
+	exit_btn.visible = false
+	act_btn.visible = false
+	queue_redraw()
+
+
+func _dungeon_change_floor(delta: int) -> void:
+	var nf := dungeon_floor + delta
+	if nf < 0:
+		_exit_dungeon()
+		return
+	if nf >= DUNGEON_FLOORS.size():
+		_show_toast("Le passage est scelle...")
+		return
+	var arrival := "^" if delta > 0 else "v"
+	cam.zoom = Vector2(DUNGEON_ZOOM, DUNGEON_ZOOM)
+	_build_dungeon_floor(nf, arrival)
+	_show_toast("Rez-de-chaussee" if nf == 0 else "Etage -%d" % nf)
+
+
+func _open_dfeature(f: Dictionary) -> void:
+	f["done"] = true
+	if f.get("collider") != null:
+		f["collider"].queue_free()
+		f["collider"] = null
+	if f.get("node") != null:
+		f["node"].visible = false
+	if f.has("r") and f.has("c"):
+		dgrid[f["r"]][f["c"]] = "."
+	queue_redraw()
+
+
+func _draw_dungeon() -> void:
+	var w := dcols * TILE
+	var h := drows * TILE
+	draw_rect(Rect2(DUNGEON_ORIGIN, Vector2(w, h)), Color(0.05, 0.05, 0.07))
+	# Sol : un seul appel tuile sur tout l'etage (la texture fait 1 case).
+	if dfloor_tex != null:
+		draw_texture_rect(dfloor_tex, Rect2(DUNGEON_ORIGIN, Vector2(w, h)), true)
+	# Murs : on ne dessine que les cases visibles a l'ecran (culling).
+	var vp := get_viewport_rect().size
+	var hw := vp.x / DUNGEON_ZOOM / 2.0
+	var hh := vp.y / DUNGEON_ZOOM / 2.0
+	var pcx := (player.position.x - DUNGEON_ORIGIN.x) / float(TILE)
+	var pcy := (player.position.y - DUNGEON_ORIGIN.y) / float(TILE)
+	var c0 := max(int(floor(pcx - hw / TILE)) - 2, 0)
+	var c1 := min(int(ceil(pcx + hw / TILE)) + 2, dcols - 1)
+	var r0 := max(int(floor(pcy - hh / TILE)) - 2, 0)
+	var r1 := min(int(ceil(pcy + hh / TILE)) + 2, drows - 1)
+	for r in range(r0, r1 + 1):
+		var arr: Array = dgrid[r]
+		var cmax: int = min(c1 + 1, arr.size())
+		for c in range(c0, cmax):
+			var ch: String = arr[c]
+			if ch != "#" and ch != "S":
+				continue
+			var rect := Rect2(DUNGEON_ORIGIN + Vector2(c * TILE, r * TILE), Vector2(TILE, TILE))
+			if dwall_tex != null:
+				draw_texture_rect(dwall_tex, rect, false)
+			else:
+				draw_rect(rect, Color(0.16, 0.13, 0.11))
+
+
+func _update_dungeon_monsters(delta: float) -> void:
+	for m in dmonsters:
+		var node: Node2D = m["node"]
+		var spr: Sprite2D = m["spr"]
+		m["ft"] += delta
+		if m["boss"]:
+			spr.texture = m["idle"]
+			node.position.y = m["home"].y + sin(m["ft"] * 1.5) * 3.0
+			continue
+		if m["state"] == "idle":
+			spr.texture = m["idle"]
+			m["t"] -= delta
+			if m["t"] <= 0.0:
+				var ang := randf() * TAU
+				var rad := randf_range(40.0, 140.0)
+				m["target"] = m["home"] + Vector2(cos(ang), sin(ang)) * rad
+				m["state"] = "walk"
+				m["ft"] = 0.0
+		else:
+			var to: Vector2 = m["target"] - node.position
+			var d: float = to.length()
+			if d < 8.0:
+				m["state"] = "idle"
+				m["t"] = randf_range(0.8, 2.5)
+				spr.texture = m["idle"]
+			else:
+				var dir: Vector2 = to / d
+				node.position += dir * m["speed"] * delta
+				var bsc: float = m["base_sc"]
+				spr.scale.x = bsc if dir.x >= 0.0 else -bsc
+				var wf: Array = m["walk"]
+				if wf.size() > 0:
+					spr.texture = wf[int(m["ft"] * 6.0) % wf.size()]
+
+
+func _dungeon_trap_check(delta: float) -> void:
+	if dtrap_cd > 0.0:
+		dtrap_cd -= delta
+		return
+	var pc := _player_cell()
+	for f in dfeatures:
+		if f.kind == "trap" and f.get("armed", false):
+			if f["r"] == pc.y and f["c"] == pc.x:
+				dtrap_cd = 1.2
+				_show_toast("Piege ! Tu es repousse.")
+				var kb := player.position - f["pos"]
+				if kb.length() < 1.0:
+					kb = Vector2(0, 1)
+				player.position += kb.normalized() * 72.0
+				player.velocity = Vector2.ZERO
+				break
+
+
+func _dungeon_proximity(delta: float, inv_open: bool) -> void:
+	near_dstair = -1
+	near_dfeat = -1
+	near_dsearch = false
+	var ppos := player.position
+	var best_stair := 99999.0
+	for sf in dfeatures:
+		if sf.kind == "down" or sf.kind == "up" or sf.kind == "exit":
+			var ds: float = ppos.distance_to(sf["pos"])
+			if ds < 95.0 and ds < best_stair:
+				best_stair = ds
+				near_dstair = 0 if sf.kind == "down" else (1 if sf.kind == "up" else 2)
+	var best_feat := 112.0
+	for i in range(dfeatures.size()):
+		var af: Dictionary = dfeatures[i]
+		if af.kind in ["key", "door", "gate", "chest", "lever"] and not af.get("done", false):
+			var dfd: float = ppos.distance_to(af["pos"])
+			if dfd < best_feat:
+				best_feat = dfd
+				near_dfeat = i
+	if near_dfeat < 0:
+		var pc := _player_cell()
+		for off in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+			var rr := pc.y + off.y
+			var cc := pc.x + off.x
+			if rr >= 0 and rr < drows and cc >= 0 and cc < dgrid[rr].size():
+				if dgrid[rr][cc] == "S":
+					near_dsearch = true
+					break
+	enter_btn.visible = false
+	exit_btn.visible = false
+	if not inv_open:
+		if near_dstair == 0:
+			enter_btn.text = "Descendre"
+			enter_btn.visible = true
+		elif near_dstair == 1:
+			exit_btn.text = "Monter"
+			exit_btn.visible = true
+		elif near_dstair == 2:
+			exit_btn.text = "Sortir"
+			exit_btn.visible = true
+	if not inv_open and near_dfeat >= 0:
+		var bf: Dictionary = dfeatures[near_dfeat]
+		match bf.kind:
+			"key":
+				act_btn.text = "Ramasser la cle"
+			"door":
+				act_btn.text = "Deverrouiller" if d_has_key else "Porte verrouillee"
+			"gate":
+				act_btn.text = "Herse close"
+			"chest":
+				act_btn.text = "Ouvrir le coffre"
+			"lever":
+				act_btn.text = "Actionner le levier"
+		act_btn.visible = true
+	elif not inv_open and near_dsearch:
+		act_btn.text = "Fouiller"
+		act_btn.visible = true
+	else:
+		act_btn.visible = false
+	_dungeon_trap_check(delta)
+
+
+func _dungeon_act() -> void:
+	if near_dfeat >= 0:
+		var f: Dictionary = dfeatures[near_dfeat]
+		match f.kind:
+			"key":
+				d_has_key = true
+				f["done"] = true
+				if f.get("node") != null:
+					f["node"].visible = false
+				_add_to_bag("cle", "Cle de l'Arbre", 1)
+				_show_toast("Cle recuperee !")
+			"door":
+				if d_has_key:
+					_open_dfeature(f)
+					_show_toast("Porte deverrouillee")
+				else:
+					_show_toast("Il te faut une cle.")
+			"gate":
+				_show_toast("La herse est close. Cherche un mecanisme...")
+			"chest":
+				f["done"] = true
+				if f.get("node") != null:
+					f["node"].modulate = Color(0.7, 0.7, 0.7)
+				var msg := ""
+				for l in f["loot"]:
+					_add_to_bag(l.icon, l.name, l.qty)
+					msg += "+%d %s  " % [l.qty, l.name]
+				_show_toast(msg)
+			"lever":
+				if not d_lever:
+					d_lever = true
+					f["done"] = true
+					if f.get("node") != null:
+						f["node"].modulate = Color(0.75, 1.0, 0.75)
+					_show_toast("Un grondement... la herse s'ouvre !")
+					for g in dfeatures:
+						if g.kind == "gate":
+							_open_dfeature(g)
+		near_dfeat = -1
+		act_btn.visible = false
+		return
+	if near_dsearch:
+		var pc := _player_cell()
+		for off in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+			var rr := pc.y + off.y
+			var cc := pc.x + off.x
+			if rr >= 0 and rr < drows and cc >= 0 and cc < dgrid[rr].size() and dgrid[rr][cc] == "S":
+				dgrid[rr][cc] = "."
+				for fe in dfeatures:
+					if fe.kind == "secret" and fe["r"] == rr and fe["c"] == cc:
+						if fe.get("collider") != null:
+							fe["collider"].queue_free()
+							fe["collider"] = null
+						fe["done"] = true
+						break
+				_show_toast("Passage secret decouvert !")
+				queue_redraw()
+				near_dsearch = false
+				act_btn.visible = false
+				return

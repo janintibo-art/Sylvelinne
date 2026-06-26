@@ -1,0 +1,46 @@
+SYLVELINNE — GRAND DONJON DE L'ARBRE-MONDE (v24, 10 ETAGES)
+============================================================
+
+Approche l'Arbre-Monde (Aldevane) dans le village : le bouton
+"Entrer dans l'Arbre" apparait. Tu plonges alors dans un labyrinthe
+GEANT de 10 etages (plus de 6000 cases au total).
+
+CE QUI T'ATTEND
+---------------
+- 10 etages-labyrinthes, de plus en plus grands (du 15x21 au 29x35).
+- Escaliers pour descendre/remonter d'etage en etage.
+- CLES a trouver qui ouvrent des PORTES VERROUILLEES (etages pairs).
+- LEVIERS qui ouvrent des HERSES de fer (etages impairs).
+- PASSAGES SECRETS : pres d'un mur suspect, le bouton "Fouiller"
+  revele une alcove cachee avec un tresor (7 etages sur 10).
+- COFFRES avec butin (potions, eclats de seve, larmes d'Aldevane...).
+- PIEGES qui te repoussent (de plus en plus nombreux en profondeur).
+- MONSTRES gardiens varies a chaque etage.
+- ETAGE 9 : l'antre du BOSS, la Sentinelle de Cendre, et le coffre final
+  derriere une herse a actionner.
+
+Tout est verifie : chaque cle/levier/secret garde bien son tresor, et tout
+reste accessible. Les etages sont generes pour ne jamais etre bloquants.
+
+COMMANDES
+---------
+- Se deplacer : joystick / glisser.
+- "Entrer dans l'Arbre" : pres d'Aldevane, entre dans le donjon.
+- "Descendre" / "Monter" : sur un escalier.
+- "Sortir" : sur l'escalier d'entree de l'etage 0 -> retour au village.
+- "Action" : ramasser une cle, ouvrir une porte/coffre, tirer un levier.
+- "Fouiller" : pres d'un mur suspect, revele les passages secrets.
+
+PERFORMANCES (mobile)
+---------------------
+Le moteur n'affiche que la zone visible a l'ecran et fusionne les murs :
+meme les grands etages restent fluides sur telephone.
+
+INSTALLATION (Termux, copier-coller)
+------------------------------------
+cd ~/storage/shared/Download/Sylvelinne ; unzip -o ~/storage/shared/Download/donjon_pack.zip ; git add . ; git commit -m "Grand donjon 10 etages v24" ; git push
+
+Puis : onglet Actions sur GitHub -> coche verte -> Artifacts -> APK.
+
+Si "unzip" ne trouve pas le fichier (le navigateur ajoute "(1)") :
+ls ~/storage/shared/Download/donjon_pack*
