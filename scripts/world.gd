@@ -39,10 +39,10 @@ const PROPS: Array = [
 ]
 
 # 4 pièces (1 par maison, même ordre que PROPS[0..3])
-const ROOM_CENTERS: Array = [Vector2(10000, 0), Vector2(12600, 0), Vector2(15200, 0), Vector2(17800, 0)]
-const ROOM_HALVES: Array = [Vector2(300, 170), Vector2(560, 360), Vector2(440, 280), Vector2(620, 400)]
-const ROOM_FLOORTINT: Array = [Color(1, 1, 1), Color(0.9, 0.86, 0.82), Color(1.06, 0.98, 0.9), Color(1.1, 0.99, 0.85)]
-const ROOM_WALLTINT: Array = [Color(1, 1, 1), Color(0.86, 0.86, 0.94), Color(1.02, 0.98, 0.96), Color(1.04, 0.96, 0.86)]
+const ROOM_CENTERS: Array = [Vector2(10000, 0), Vector2(12600, 0), Vector2(15200, 0), Vector2(17800, 0), Vector2(20400, 0)]
+const ROOM_HALVES: Array = [Vector2(300, 170), Vector2(560, 360), Vector2(440, 280), Vector2(620, 400), Vector2(520, 340)]
+const ROOM_FLOORTINT: Array = [Color(1, 1, 1), Color(0.9, 0.86, 0.82), Color(1.06, 0.98, 0.9), Color(1.1, 0.99, 0.85), Color(0.72, 0.7, 0.78)]
+const ROOM_WALLTINT: Array = [Color(1, 1, 1), Color(0.86, 0.86, 0.94), Color(1.02, 0.98, 0.96), Color(1.04, 0.96, 0.86), Color(0.6, 0.6, 0.72)]
 
 var player: CharacterBody2D
 var sprite: Sprite2D
@@ -92,6 +92,8 @@ var near_interact: int = -1
 var vendor: Dictionary = {}
 var vendor_event: String = ""
 var vendor_say: Label
+var trapdoor: Dictionary = {}
+var near_trap: bool = false
 
 var wind_phase: float = 0.0
 var wind_str: float = 0.6
@@ -142,6 +144,7 @@ func _ready() -> void:
 	_spawn_props()
 	_build_interiors()
 	_create_vendor()
+	_create_trapdoor()
 	_create_hud()
 	_create_inventory()
 	_create_particles()
@@ -243,6 +246,7 @@ func _build_interiors() -> void:
 	_build_biblio(ROOM_CENTERS[1])
 	_build_shop(ROOM_CENTERS[2])
 	_build_auberge(ROOM_CENTERS[3])
+	_build_throne(ROOM_CENTERS[4])
 
 
 func _build_chambre(c: Vector2) -> void:
@@ -381,6 +385,56 @@ func _placeholder_vendor() -> Node2D:
 	tag.add_theme_constant_override("outline_size", 5)
 	n.add_child(tag)
 	return n
+
+
+func _create_trapdoor() -> void:
+	var cl := "res://assets/props/trap_closed.png"
+	if not ResourceLoader.exists(cl):
+		return
+	var closed_tex: Texture2D = load(cl)
+	var op := "res://assets/props/trap_open.png"
+	var open_tex: Texture2D = load(op) if ResourceLoader.exists(op) else closed_tex
+	var pos := Vector2(250, 280)
+	var spr := Sprite2D.new()
+	spr.texture = closed_tex
+	var s: float = 150.0 / float(closed_tex.get_height())
+	spr.scale = Vector2(s, s)
+	spr.offset = Vector2(0, -closed_tex.get_height() / 2.0)
+	spr.position = pos
+	ysort.add_child(spr)
+	trapdoor = {"sprite": spr, "pos": pos, "closed_tex": closed_tex, "open_tex": open_tex}
+
+
+func _build_throne(c: Vector2) -> void:
+	for ry in [150, 0, -150]:
+		_furni(c, "tapis", Vector2(0, ry), 160, false, Vector2.ZERO, -1)
+	_furni(c, "throne", Vector2(0, -255), 190, true, Vector2(86, 30))
+	_furni(c, "candelabre", Vector2(-185, -258), 150, true, Vector2(70, 26))
+	_furni(c, "candelabre", Vector2(185, -258), 150, true, Vector2(70, 26))
+	_furni(c, "table", Vector2(0, -120), 96, true, Vector2(84, 30))
+	_furni(c, "biblio", Vector2(-460, -250), 160, true, Vector2(78, 26))
+	_furni(c, "biblio", Vector2(460, -250), 160, true, Vector2(78, 26))
+	_furni(c, "commode", Vector2(-475, -30), 110, true, Vector2(92, 28))
+	_furni(c, "commode", Vector2(475, -30), 110, true, Vector2(92, 28))
+	_furni(c, "fauteuil", Vector2(-230, 90), 118, true, Vector2(78, 34))
+	_furni(c, "fauteuil", Vector2(230, 90), 118, true, Vector2(78, 34))
+	_furni(c, "fauteuil", Vector2(-445, 150), 118, true, Vector2(78, 34))
+	var topen := "res://assets/props/trap_open.png"
+	if ResourceLoader.exists(topen):
+		var tex: Texture2D = load(topen)
+		var spr := Sprite2D.new()
+		spr.texture = tex
+		var s: float = 150.0 / float(tex.get_height())
+		spr.scale = Vector2(s, s)
+		spr.offset = Vector2(0, -tex.get_height() / 2.0)
+		spr.position = c + Vector2(0, 300)
+		ysort.add_child(spr)
+	_inter(c, "chest", "furniture/coffre", Vector2(445, 150), 114, true, Vector2(78, 32),
+		[{"icon": "bourse", "name": "Bourse d'or", "qty": 5}, {"icon": "cristal", "name": "Cristal", "qty": 3}, {"icon": "grimoire", "name": "Grimoire ancien", "qty": 1}])
+	_inter(c, "item", "items/cristal", Vector2(0, -145), 30, false, Vector2.ZERO, [{"icon": "cristal", "name": "Cristal", "qty": 1}])
+	_inter(c, "item", "items/grimoire", Vector2(230, -100), 30, false, Vector2.ZERO, [{"icon": "grimoire", "name": "Grimoire", "qty": 1}])
+	_inter(c, "item", "items/bourse", Vector2(-230, -100), 30, false, Vector2.ZERO, [{"icon": "bourse", "name": "Bourse d'or", "qty": 1}])
+	_inter(c, "item", "items/cle", Vector2(0, 40), 28, false, Vector2.ZERO, [{"icon": "cle", "name": "Clé", "qty": 1}])
 
 
 func _furni(center: Vector2, name: String, rel: Vector2, h: float, collide: bool, foot: Vector2, z: int = 0) -> void:
@@ -793,14 +847,24 @@ func _show_toast(msg: String) -> void:
 
 
 func _on_enter() -> void:
-	if near_house < 0 or inside:
+	if inside or (near_house < 0 and not near_trap):
 		return
 	inside = true
-	current_room = near_house
-	return_pos = PROPS[near_house].pos + Vector2(0, 60)
+	var spawn_off: float
+	if near_house < 0 and near_trap:
+		current_room = 4
+		return_pos = trapdoor.pos + Vector2(0, 50)
+		if not trapdoor.is_empty():
+			trapdoor.sprite.texture = trapdoor.open_tex
+		spawn_off = ROOM_HALVES[4].y - 150
+		exit_btn.text = "⬆️ Remonter"
+	else:
+		current_room = near_house
+		return_pos = PROPS[near_house].pos + Vector2(0, 60)
+		spawn_off = ROOM_HALVES[current_room].y - 46
+		exit_btn.text = "🚪 Sortir"
 	var c: Vector2 = ROOM_CENTERS[current_room]
-	var hf: Vector2 = ROOM_HALVES[current_room]
-	player.position = c + Vector2(0, hf.y - 46)
+	player.position = c + Vector2(0, spawn_off)
 	player.velocity = Vector2.ZERO
 	facing = "up"
 	_set_cam_room(current_room)
@@ -817,6 +881,8 @@ func _on_exit() -> void:
 	if not inside:
 		return
 	inside = false
+	if current_room == 4 and not trapdoor.is_empty():
+		trapdoor.sprite.texture = trapdoor.closed_tex
 	player.position = return_pos
 	player.velocity = Vector2.ZERO
 	facing = "down"
@@ -927,7 +993,14 @@ func _process(delta: float) -> void:
 			if player.position.distance_to(PROPS[i].pos) < 150.0:
 				near_house = i
 				break
-		enter_btn.visible = (near_house >= 0) and not inv_open
+		near_trap = false
+		if not trapdoor.is_empty() and player.position.distance_to(trapdoor.pos) < 130.0:
+			near_trap = true
+		if near_house >= 0:
+			enter_btn.text = "Entrer"
+		elif near_trap:
+			enter_btn.text = "⬇️ Descendre"
+		enter_btn.visible = (near_house >= 0 or near_trap) and not inv_open
 
 	if not vendor.is_empty():
 		if inside and current_room == 2:
