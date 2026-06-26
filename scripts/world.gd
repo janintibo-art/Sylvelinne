@@ -108,6 +108,18 @@ const ALDWIN_GRAMMAR := {
 	"froid": ["...", "Tout doit s'immobiliser.", "Le mouvement est une faiblesse.", "Ici, rien ne change. Jamais."],
 }
 
+const PEINTRE_GRAMMAR := {
+	"greet_new": ["Oh... une visiteuse. {accueil}", "Tu as des couleurs dans le regard, toi. {accueil}", "Approche, ne fais pas fuir la lumière. {accueil}"],
+	"greet_return": ["Te revoilà. {doux}", "J'ai gardé une couleur pour toi. {doux}"],
+	"chat": ["{muse} {soupir}", "{muse}", "{soupir}"],
+	"react_pick": ["Prends, prends. {doux}", "Les belles choses doivent voyager. {doux}"],
+	"react_buy": ["Que cela t'apporte un peu de printemps.", "Emporte une couleur avec toi. {doux}"],
+	"accueil": ["Je peins ce que le gel a volé.", "Ici, je garde les saisons en vie, sur la toile.", "Le blanc n'est pas le vide : c'est tout ce qui attend."],
+	"doux": ["*sourire de neige*", "Que les Esprits te gardent.", "Va, et regarde mieux le monde."],
+	"muse": ["Tu te souviens de la couleur du printemps ? Moi, oui.", "Aldwin a figé le monde, mais pas ma mémoire.", "Chaque flocon est un tableau que personne ne regarde.", "Je mélange du givre et des souvenirs."],
+	"soupir": ["...", "Il neige même dans mes rêves.", "Bientôt, peut-être, le dégel.", "Une couleur de plus, et le monde respirera."],
+}
+
 var wind_phase: float = 0.0
 var wind_str: float = 0.6
 
@@ -345,6 +357,7 @@ func _build_auberge(c: Vector2) -> void:
 func _create_npcs() -> void:
 	_create_npc(2, Vector2(0, 55), "vendeuse", NpcBrainScript.new(), 120.0)
 	_create_npc(4, Vector2(0, -150), "aldwin", NpcBrainScript.new(ALDWIN_GRAMMAR, 0.7), 150.0)
+	_create_npc(3, Vector2(-200, 60), "peintre", NpcBrainScript.new(PEINTRE_GRAMMAR, 0.85), 135.0)
 
 
 func _create_npc(room: int, rel: Vector2, name: String, brain, height: float) -> void:
