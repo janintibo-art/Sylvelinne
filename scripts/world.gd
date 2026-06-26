@@ -460,7 +460,7 @@ func _set_cam_room(i: int) -> void:
 	var hf: Vector2 = ROOM_HALVES[i]
 	cam.limit_left = int(c.x - hf.x)
 	cam.limit_right = int(c.x + hf.x)
-	cam.limit_top = int(c.y - hf.y)
+	cam.limit_top = int(c.y - hf.y - 180.0)
 	cam.limit_bottom = int(c.y + hf.y)
 
 
@@ -939,11 +939,11 @@ func _draw() -> void:
 	for i in range(ROOM_CENTERS.size()):
 		var c: Vector2 = ROOM_CENTERS[i]
 		var hf: Vector2 = ROOM_HALVES[i]
-		draw_rect(Rect2(c - hf - Vector2(110, 110), (hf + Vector2(110, 110)) * 2.0), Color(0.09, 0.08, 0.13))
+		draw_rect(Rect2(c + Vector2(-hf.x - 120, -hf.y - 300), Vector2(hf.x * 2 + 240, hf.y * 2 + 420)), Color(0.09, 0.08, 0.13))
 		if wall_tex != null:
-			draw_texture_rect(wall_tex, Rect2(c + Vector2(-hf.x - 16, -hf.y - 46), Vector2(hf.x * 2 + 32, hf.y * 2 + 62)), true, ROOM_WALLTINT[i])
+			draw_texture_rect(wall_tex, Rect2(c + Vector2(-hf.x - 16, -hf.y - 180), Vector2(hf.x * 2 + 32, hf.y * 2 + 196)), true, ROOM_WALLTINT[i])
 		else:
-			draw_rect(Rect2(c + Vector2(-hf.x - 16, -hf.y - 46), Vector2(hf.x * 2 + 32, hf.y * 2 + 62)), Color(0.5, 0.45, 0.39))
+			draw_rect(Rect2(c + Vector2(-hf.x - 16, -hf.y - 180), Vector2(hf.x * 2 + 32, hf.y * 2 + 196)), Color(0.5, 0.45, 0.39))
 		if floor_tex != null:
 			draw_texture_rect(floor_tex, Rect2(c - hf, hf * 2.0), true, ROOM_FLOORTINT[i])
 		else:
