@@ -91,6 +91,7 @@ var interactives: Array = []
 var near_interact: int = -1
 var vendor: Dictionary = {}
 var vendor_event: String = ""
+var vendor_say: Label
 
 var wind_phase: float = 0.0
 var wind_str: float = 0.6
@@ -319,20 +320,9 @@ func _create_vendor() -> void:
 		node.add_child(sprite_node)
 	else:
 		node.add_child(_placeholder_vendor())
-	var bubble := Label.new()
-	bubble.size = Vector2(360, 90)
-	bubble.position = Vector2(-180, -250)
-	bubble.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	bubble.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	bubble.add_theme_font_size_override("font_size", 20)
-	bubble.add_theme_color_override("font_color", Color(1, 1, 0.9))
-	bubble.add_theme_color_override("font_outline_color", Color(0, 0, 0))
-	bubble.add_theme_constant_override("outline_size", 6)
-	bubble.visible = false
-	node.add_child(bubble)
 	_add_collision(vpos + Vector2(0, -12), Vector2(44, 24))
 	var brain = NpcBrainScript.new()
-	vendor = {"node": node, "sprite": sprite_node, "frames": frames, "bubble": bubble, "brain": brain, "pos": vpos, "t": 0.0, "cur": "idle", "fi": 0, "ft": 0.0, "playing": false, "fps": 16.0}
+	vendor = {"node": node, "sprite": sprite_node, "frames": frames, "brain": brain, "pos": vpos, "t": 0.0, "cur": "idle", "fi": 0, "ft": 0.0, "playing": false, "fps": 16.0}
 
 
 func _placeholder_vendor() -> Node2D:
@@ -538,7 +528,7 @@ func _create_hud() -> void:
 	cast_btn.text = "✨ Sort"
 	cast_btn.add_theme_font_size_override("font_size", 48)
 	cast_btn.size = Vector2(260, 150)
-	cast_btn.position = Vector2(1600, 870)
+	cast_btn.position = Vector2(1540, 760)
 	cast_btn.modulate = Color(1, 1, 1, 0.92)
 	cast_btn.pressed.connect(_on_cast)
 	layer.add_child(cast_btn)
@@ -547,7 +537,7 @@ func _create_hud() -> void:
 	sac_btn.text = "Sac"
 	sac_btn.add_theme_font_size_override("font_size", 44)
 	sac_btn.size = Vector2(220, 96)
-	sac_btn.position = Vector2(1660, 30)
+	sac_btn.position = Vector2(1580, 44)
 	sac_btn.modulate = Color(1, 1, 1, 0.92)
 	sac_btn.pressed.connect(_toggle_inventory)
 	layer.add_child(sac_btn)
@@ -556,16 +546,16 @@ func _create_hud() -> void:
 	enter_btn.text = "Entrer"
 	enter_btn.add_theme_font_size_override("font_size", 44)
 	enter_btn.size = Vector2(280, 120)
-	enter_btn.position = Vector2(820, 900)
+	enter_btn.position = Vector2(810, 760)
 	enter_btn.visible = false
 	enter_btn.pressed.connect(_on_enter)
 	layer.add_child(enter_btn)
 
 	exit_btn = Button.new()
 	exit_btn.text = "🚪 Sortir"
-	exit_btn.add_theme_font_size_override("font_size", 40)
-	exit_btn.size = Vector2(260, 110)
-	exit_btn.position = Vector2(60, 900)
+	exit_btn.add_theme_font_size_override("font_size", 44)
+	exit_btn.size = Vector2(300, 130)
+	exit_btn.position = Vector2(150, 760)
 	exit_btn.visible = false
 	exit_btn.pressed.connect(_on_exit)
 	layer.add_child(exit_btn)
@@ -574,7 +564,7 @@ func _create_hud() -> void:
 	act_btn.text = "Ramasser"
 	act_btn.add_theme_font_size_override("font_size", 44)
 	act_btn.size = Vector2(300, 120)
-	act_btn.position = Vector2(810, 900)
+	act_btn.position = Vector2(810, 760)
 	act_btn.visible = false
 	act_btn.pressed.connect(_on_act)
 	layer.add_child(act_btn)
@@ -582,9 +572,21 @@ func _create_hud() -> void:
 	toast_label = Label.new()
 	toast_label.add_theme_font_size_override("font_size", 46)
 	toast_label.modulate = Color(1, 1, 0.6)
-	toast_label.position = Vector2(640, 150)
+	toast_label.position = Vector2(640, 200)
 	toast_label.visible = false
 	layer.add_child(toast_label)
+
+	vendor_say = Label.new()
+	vendor_say.position = Vector2(500, 30)
+	vendor_say.size = Vector2(920, 0)
+	vendor_say.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	vendor_say.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	vendor_say.add_theme_font_size_override("font_size", 42)
+	vendor_say.add_theme_color_override("font_color", Color(1, 0.97, 0.85))
+	vendor_say.add_theme_color_override("font_outline_color", Color(0.08, 0.03, 0.12))
+	vendor_say.add_theme_constant_override("outline_size", 10)
+	vendor_say.visible = false
+	layer.add_child(vendor_say)
 
 
 func _create_inventory() -> void:
@@ -846,9 +848,9 @@ func _process(delta: float) -> void:
 			var res: Dictionary = vendor.brain.think(pp)
 			vendor_event = ""
 			if res.line != null:
-				vendor.bubble.text = res.line
-				vendor.bubble.visible = true
-				vendor.bubble.modulate.a = 1.0
+				vendor_say.text = res.line
+				vendor_say.visible = true
+				vendor_say.modulate.a = 1.0
 				vendor.t = 4.0
 				if vendor.sprite != null and (res.state == "greet" or res.state == "react") and vendor.frames[res.state].size() > 0:
 					vendor.cur = res.state
@@ -856,7 +858,7 @@ func _process(delta: float) -> void:
 					vendor.ft = 0.0
 					vendor.playing = true
 		else:
-			vendor.bubble.visible = false
+			vendor_say.visible = false
 		if vendor.sprite != null:
 			if vendor.playing:
 				vendor.ft += delta
@@ -874,9 +876,9 @@ func _process(delta: float) -> void:
 		if vendor.t > 0.0:
 			vendor.t -= delta
 			if vendor.t < 0.8:
-				vendor.bubble.modulate.a = clampf(vendor.t / 0.8, 0.0, 1.0)
+				vendor_say.modulate.a = clampf(vendor.t / 0.8, 0.0, 1.0)
 			if vendor.t <= 0.0:
-				vendor.bubble.visible = false
+				vendor_say.visible = false
 
 	_update_projectiles(delta)
 	if sprite == null:
