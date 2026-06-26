@@ -301,18 +301,24 @@ func _create_vendor() -> void:
 	var node := Node2D.new()
 	node.position = vpos
 	ysort.add_child(node)
-	var vis: Node2D
+	var frames := {"idle": [], "greet": [], "react": []}
+	var sprite_node: Sprite2D = null
 	if ResourceLoader.exists("res://assets/characters/vendeuse.png"):
-		var spr := Sprite2D.new()
-		spr.texture = load("res://assets/characters/vendeuse.png")
-		var s: float = 120.0 / float(spr.texture.get_height())
-		spr.scale = Vector2(s, s)
-		spr.offset = Vector2(0, -spr.texture.get_height() / 2.0)
-		node.add_child(spr)
-		vis = spr
+		frames["idle"].append(load("res://assets/characters/vendeuse.png"))
+		for key in ["greet", "react"]:
+			var i := 0
+			while ResourceLoader.exists("res://assets/characters/vendeuse_%s_%02d.png" % [key, i]):
+				frames[key].append(load("res://assets/characters/vendeuse_%s_%02d.png" % [key, i]))
+				i += 1
+		sprite_node = Sprite2D.new()
+		var tex0: Texture2D = frames["idle"][0]
+		sprite_node.texture = tex0
+		var s: float = 120.0 / float(tex0.get_height())
+		sprite_node.scale = Vector2(s, s)
+		sprite_node.offset = Vector2(0, -tex0.get_height() / 2.0)
+		node.add_child(sprite_node)
 	else:
-		vis = _placeholder_vendor()
-		node.add_child(vis)
+		node.add_child(_placeholder_vendor())
 	var bubble := Label.new()
 	bubble.size = Vector2(360, 90)
 	bubble.position = Vector2(-180, -250)
@@ -326,7 +332,7 @@ func _create_vendor() -> void:
 	node.add_child(bubble)
 	_add_collision(vpos + Vector2(0, -12), Vector2(44, 24))
 	var brain = NpcBrainScript.new()
-	vendor = {"node": node, "vis": vis, "bubble": bubble, "brain": brain, "pos": vpos, "t": 0.0}
+	vendor = {"node": node, "sprite": sprite_node, "frames": frames, "bubble": bubble, "brain": brain, "pos": vpos, "t": 0.0, "cur": "idle", "fi": 0, "ft": 0.0, "playing": false, "fps": 16.0}
 
 
 func _placeholder_vendor() -> Node2D:
@@ -844,10 +850,27 @@ func _process(delta: float) -> void:
 				vendor.bubble.visible = true
 				vendor.bubble.modulate.a = 1.0
 				vendor.t = 4.0
-			if vendor.vis is Sprite2D:
-				vendor.vis.flip_h = player.position.x > vendor.pos.x
+				if vendor.sprite != null and (res.state == "greet" or res.state == "react") and vendor.frames[res.state].size() > 0:
+					vendor.cur = res.state
+					vendor.fi = 0
+					vendor.ft = 0.0
+					vendor.playing = true
 		else:
 			vendor.bubble.visible = false
+		if vendor.sprite != null:
+			if vendor.playing:
+				vendor.ft += delta
+				var fi := int(vendor.ft * vendor.fps)
+				if fi >= vendor.frames[vendor.cur].size():
+					vendor.playing = false
+					vendor.cur = "idle"
+					fi = 0
+				vendor.fi = fi
+				var seq: Array = vendor.frames[vendor.cur]
+				if seq.size() > 0:
+					vendor.sprite.texture = seq[min(vendor.fi, seq.size() - 1)]
+			else:
+				vendor.sprite.texture = vendor.frames["idle"][0]
 		if vendor.t > 0.0:
 			vendor.t -= delta
 			if vendor.t < 0.8:
