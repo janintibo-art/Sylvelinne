@@ -89,11 +89,24 @@ var near_house: int = -1
 var return_pos: Vector2 = Vector2.ZERO
 var interactives: Array = []
 var near_interact: int = -1
-var vendor: Dictionary = {}
-var vendor_event: String = ""
-var vendor_say: Label
+var npcs: Array = []
+var npc_say: Label
+var npc_say_t: float = 0.0
 var trapdoor: Dictionary = {}
 var near_trap: bool = false
+
+const ALDWIN_GRAMMAR := {
+	"greet_new": ["Qui ose troubler {lieu} ? {menace}", "Une intruse... {menace}", "Tu n'aurais pas dû descendre ici. {menace}"],
+	"greet_return": ["Encore toi. {las}", "Tu reviens te soumettre ? {menace}", "L'insecte persévère. {menace}"],
+	"chat": ["{pensee} {froid}", "{pensee}", "{froid}"],
+	"react_pick": ["Repose cela. {menace}", "Ces reliques ne sont pas à toi. {menace}"],
+	"react_buy": ["Tu pilles mon trône... {menace}", "Audacieuse. Cela te coûtera. {menace}"],
+	"lieu": ["mon repaire", "ma salle", "le silence de l'Immuable", "mon trône"],
+	"menace": ["Le gel n'épargne personne.", "Les saisons m'obéissent, pas toi.", "Repars, ou deviens statue.", "Aldévane ne te sauvera pas."],
+	"las": ["Ta persévérance m'agace.", "Tu n'apprends donc rien ?"],
+	"pensee": ["Le monde était parfait : figé, silencieux.", "J'ai arrêté le temps pour le préserver.", "Le printemps n'est que désordre.", "Les Esprits chuchotent ? Qu'ils chuchotent."],
+	"froid": ["...", "Tout doit s'immobiliser.", "Le mouvement est une faiblesse.", "Ici, rien ne change. Jamais."],
+}
 
 var wind_phase: float = 0.0
 var wind_str: float = 0.6
@@ -143,7 +156,7 @@ func _ready() -> void:
 	_create_player()
 	_spawn_props()
 	_build_interiors()
-	_create_vendor()
+	_create_npcs()
 	_create_trapdoor()
 	_create_hud()
 	_create_inventory()
@@ -329,33 +342,38 @@ func _build_auberge(c: Vector2) -> void:
 	_inter(c, "item", "items/bourse", Vector2(-560, 300), 28, false, Vector2.ZERO, [{"icon": "bourse", "name": "Bourse d'or", "qty": 1}])
 
 
-func _create_vendor() -> void:
-	var vpos := ROOM_CENTERS[2] + Vector2(0, 55)
+func _create_npcs() -> void:
+	_create_npc(2, Vector2(0, 55), "vendeuse", NpcBrainScript.new(), 120.0)
+	_create_npc(4, Vector2(0, -150), "aldwin", NpcBrainScript.new(ALDWIN_GRAMMAR, 0.7), 150.0)
+
+
+func _create_npc(room: int, rel: Vector2, name: String, brain, height: float) -> void:
+	var pos := ROOM_CENTERS[room] + rel
 	var node := Node2D.new()
-	node.position = vpos
+	node.position = pos
 	ysort.add_child(node)
 	var frames := {"idle": [], "greet": [], "react": []}
 	var sprite_node: Sprite2D = null
-	if ResourceLoader.exists("res://assets/characters/vendeuse.png"):
-		frames["idle"].append(load("res://assets/characters/vendeuse.png"))
+	var base_path := "res://assets/characters/%s.png" % name
+	if ResourceLoader.exists(base_path):
+		frames["idle"].append(load(base_path))
 		for key in ["greet", "react"]:
 			var i := 0
-			while ResourceLoader.exists("res://assets/characters/vendeuse_%s_%02d.png" % [key, i]):
-				frames[key].append(load("res://assets/characters/vendeuse_%s_%02d.png" % [key, i]))
+			while ResourceLoader.exists("res://assets/characters/%s_%s_%02d.png" % [name, key, i]):
+				frames[key].append(load("res://assets/characters/%s_%s_%02d.png" % [name, key, i]))
 				i += 1
 		sprite_node = Sprite2D.new()
 		var tex0: Texture2D = frames["idle"][0]
 		sprite_node.texture = tex0
-		var s: float = 120.0 / float(tex0.get_height())
-		sprite_node.scale = Vector2(s, s)
+		var sc: float = height / float(tex0.get_height())
+		sprite_node.scale = Vector2(sc, sc)
 		sprite_node.offset = Vector2(0, -tex0.get_height() / 2.0)
 		node.add_child(sprite_node)
 	else:
 		node.add_child(_placeholder_vendor())
 	_add_child_shadow(node, 60.0)
-	_add_collision(vpos + Vector2(0, -12), Vector2(44, 24))
-	var brain = NpcBrainScript.new()
-	vendor = {"node": node, "sprite": sprite_node, "frames": frames, "brain": brain, "pos": vpos, "t": 0.0, "cur": "idle", "fi": 0, "ft": 0.0, "playing": false, "fps": 16.0}
+	_add_collision(pos + Vector2(0, -12), Vector2(46, 24))
+	npcs.append({"node": node, "sprite": sprite_node, "frames": frames, "brain": brain, "pos": pos, "room": room, "event": "", "cur": "idle", "fi": 0, "ft": 0.0, "playing": false, "fps": 16.0})
 
 
 func _placeholder_vendor() -> Node2D:
@@ -411,7 +429,6 @@ func _build_throne(c: Vector2) -> void:
 	_furni(c, "throne", Vector2(0, -255), 190, true, Vector2(86, 30))
 	_furni(c, "candelabre", Vector2(-185, -258), 150, true, Vector2(70, 26))
 	_furni(c, "candelabre", Vector2(185, -258), 150, true, Vector2(70, 26))
-	_furni(c, "table", Vector2(0, -120), 96, true, Vector2(84, 30))
 	_furni(c, "biblio", Vector2(-460, -250), 160, true, Vector2(78, 26))
 	_furni(c, "biblio", Vector2(460, -250), 160, true, Vector2(78, 26))
 	_furni(c, "commode", Vector2(-475, -30), 110, true, Vector2(92, 28))
@@ -431,7 +448,7 @@ func _build_throne(c: Vector2) -> void:
 		ysort.add_child(spr)
 	_inter(c, "chest", "furniture/coffre", Vector2(445, 150), 114, true, Vector2(78, 32),
 		[{"icon": "bourse", "name": "Bourse d'or", "qty": 5}, {"icon": "cristal", "name": "Cristal", "qty": 3}, {"icon": "grimoire", "name": "Grimoire ancien", "qty": 1}])
-	_inter(c, "item", "items/cristal", Vector2(0, -145), 30, false, Vector2.ZERO, [{"icon": "cristal", "name": "Cristal", "qty": 1}])
+	_inter(c, "item", "items/cristal", Vector2(150, -90), 30, false, Vector2.ZERO, [{"icon": "cristal", "name": "Cristal", "qty": 1}])
 	_inter(c, "item", "items/grimoire", Vector2(230, -100), 30, false, Vector2.ZERO, [{"icon": "grimoire", "name": "Grimoire", "qty": 1}])
 	_inter(c, "item", "items/bourse", Vector2(-230, -100), 30, false, Vector2.ZERO, [{"icon": "bourse", "name": "Bourse d'or", "qty": 1}])
 	_inter(c, "item", "items/cle", Vector2(0, 40), 28, false, Vector2.ZERO, [{"icon": "cle", "name": "Clé", "qty": 1}])
@@ -718,17 +735,17 @@ func _create_hud() -> void:
 	toast_label.visible = false
 	layer.add_child(toast_label)
 
-	vendor_say = Label.new()
-	vendor_say.position = Vector2(500, 30)
-	vendor_say.size = Vector2(920, 0)
-	vendor_say.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	vendor_say.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	vendor_say.add_theme_font_size_override("font_size", 42)
-	vendor_say.add_theme_color_override("font_color", Color(1, 0.97, 0.85))
-	vendor_say.add_theme_color_override("font_outline_color", Color(0.08, 0.03, 0.12))
-	vendor_say.add_theme_constant_override("outline_size", 10)
-	vendor_say.visible = false
-	layer.add_child(vendor_say)
+	npc_say = Label.new()
+	npc_say.position = Vector2(500, 30)
+	npc_say.size = Vector2(920, 0)
+	npc_say.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	npc_say.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	npc_say.add_theme_font_size_override("font_size", 42)
+	npc_say.add_theme_color_override("font_color", Color(1, 0.97, 0.85))
+	npc_say.add_theme_color_override("font_outline_color", Color(0.08, 0.03, 0.12))
+	npc_say.add_theme_constant_override("outline_size", 10)
+	npc_say.visible = false
+	layer.add_child(npc_say)
 
 
 func _create_inventory() -> void:
@@ -903,8 +920,11 @@ func _on_act() -> void:
 	if o.taken:
 		return
 	o.taken = true
-	if inside and current_room == 2:
-		vendor_event = "buy" if o.type == "chest" else "pick"
+	if inside:
+		for n in npcs:
+			if n.room == current_room:
+				n.event = "buy" if o.type == "chest" else "pick"
+				break
 	var msg := ""
 	for l in o.loot:
 		_add_to_bag(l.icon, l.name, l.qty)
@@ -1002,44 +1022,52 @@ func _process(delta: float) -> void:
 			enter_btn.text = "⬇️ Descendre"
 		enter_btn.visible = (near_house >= 0 or near_trap) and not inv_open
 
-	if not vendor.is_empty():
-		if inside and current_room == 2:
-			var vd := player.position.distance_to(vendor.pos)
-			var pp := {"near": vd < 180.0, "dist": vd, "interacted": vendor_event != "", "event": (vendor_event if vendor_event != "" else "pick"), "dt": delta}
-			var res: Dictionary = vendor.brain.think(pp)
-			vendor_event = ""
-			if res.line != null:
-				vendor_say.text = res.line
-				vendor_say.visible = true
-				vendor_say.modulate.a = 1.0
-				vendor.t = 4.0
-				if vendor.sprite != null and (res.state == "greet" or res.state == "react") and vendor.frames[res.state].size() > 0:
-					vendor.cur = res.state
-					vendor.fi = 0
-					vendor.ft = 0.0
-					vendor.playing = true
-		else:
-			vendor_say.visible = false
-		if vendor.sprite != null:
-			if vendor.playing:
-				vendor.ft += delta
-				var fi := int(vendor.ft * vendor.fps)
-				if fi >= vendor.frames[vendor.cur].size():
-					vendor.playing = false
-					vendor.cur = "idle"
+	var active_npc = null
+	if inside:
+		for n in npcs:
+			if n.room == current_room:
+				active_npc = n
+				break
+	for n in npcs:
+		if n.sprite != null and n != active_npc:
+			n.sprite.texture = n.frames["idle"][0]
+	if active_npc != null:
+		var vd := player.position.distance_to(active_npc.pos)
+		var pp := {"near": vd < 190.0, "dist": vd, "interacted": active_npc.event != "", "event": (active_npc.event if active_npc.event != "" else "pick"), "dt": delta}
+		var res: Dictionary = active_npc.brain.think(pp)
+		active_npc.event = ""
+		if res.line != null:
+			npc_say.text = res.line
+			npc_say.visible = true
+			npc_say.modulate.a = 1.0
+			npc_say_t = 4.5
+			if active_npc.sprite != null and (res.state == "greet" or res.state == "react") and active_npc.frames[res.state].size() > 0:
+				active_npc.cur = res.state
+				active_npc.fi = 0
+				active_npc.ft = 0.0
+				active_npc.playing = true
+		if active_npc.sprite != null:
+			if active_npc.playing:
+				active_npc.ft += delta
+				var fi := int(active_npc.ft * active_npc.fps)
+				if fi >= active_npc.frames[active_npc.cur].size():
+					active_npc.playing = false
+					active_npc.cur = "idle"
 					fi = 0
-				vendor.fi = fi
-				var seq: Array = vendor.frames[vendor.cur]
+				active_npc.fi = fi
+				var seq: Array = active_npc.frames[active_npc.cur]
 				if seq.size() > 0:
-					vendor.sprite.texture = seq[min(vendor.fi, seq.size() - 1)]
+					active_npc.sprite.texture = seq[min(active_npc.fi, seq.size() - 1)]
 			else:
-				vendor.sprite.texture = vendor.frames["idle"][0]
-		if vendor.t > 0.0:
-			vendor.t -= delta
-			if vendor.t < 0.8:
-				vendor_say.modulate.a = clampf(vendor.t / 0.8, 0.0, 1.0)
-			if vendor.t <= 0.0:
-				vendor_say.visible = false
+				active_npc.sprite.texture = active_npc.frames["idle"][0]
+	else:
+		npc_say.visible = false
+	if npc_say_t > 0.0:
+		npc_say_t -= delta
+		if npc_say_t < 0.8:
+			npc_say.modulate.a = clampf(npc_say_t / 0.8, 0.0, 1.0)
+		if npc_say_t <= 0.0:
+			npc_say.visible = false
 
 	_update_projectiles(delta)
 	if sprite == null:
