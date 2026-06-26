@@ -90,6 +90,7 @@ var return_pos: Vector2 = Vector2.ZERO
 var interactives: Array = []
 var near_interact: int = -1
 var npcs: Array = []
+var creatures: Array = []
 var npc_say: Label
 var npc_say_t: float = 0.0
 var trapdoor: Dictionary = {}
@@ -170,6 +171,7 @@ func _ready() -> void:
 	_build_interiors()
 	_create_npcs()
 	_create_trapdoor()
+	_create_creatures()
 	_create_hud()
 	_create_inventory()
 	_create_particles()
@@ -434,6 +436,76 @@ func _create_trapdoor() -> void:
 	spr.position = pos
 	ysort.add_child(spr)
 	trapdoor = {"sprite": spr, "pos": pos, "closed_tex": closed_tex, "open_tex": open_tex}
+
+
+# ====================== CREATURES ERRANTES ======================
+func _create_creatures() -> void:
+	_create_creature(Vector2(-450, 600), "renard_braise", 105.0, 60.0)
+	_create_creature(Vector2(820, 420), "chiot_cristal", 95.0, 50.0)
+	_create_creature(Vector2(120, 820), "grenouille_brume", 90.0, 30.0)
+	_create_creature(Vector2(-700, 120), "cerf_murmures", 140.0, 45.0)
+
+
+func _create_creature(home: Vector2, slug: String, height: float, speed: float) -> void:
+	var idle_path := "res://assets/monsters/%s/idle.png" % slug
+	if not ResourceLoader.exists(idle_path):
+		return
+	var node := Node2D.new()
+	node.position = home
+	ysort.add_child(node)
+	var walk: Array = []
+	var i := 1
+	while ResourceLoader.exists("res://assets/monsters/%s/walk_%02d.png" % [slug, i]):
+		walk.append(load("res://assets/monsters/%s/walk_%02d.png" % [slug, i]))
+		i += 1
+	var idle_tex: Texture2D = load(idle_path)
+	var spr := Sprite2D.new()
+	spr.texture = idle_tex
+	var sc: float = height / float(idle_tex.get_height())
+	spr.scale = Vector2(sc, sc)
+	spr.offset = Vector2(0, -idle_tex.get_height() / 2.0)
+	node.add_child(spr)
+	_add_child_shadow(node, height * 0.55)
+	creatures.append({
+		"node": node, "spr": spr, "idle": idle_tex, "walk": walk,
+		"home": home, "target": home, "speed": speed,
+		"state": "idle", "t": randf_range(1.0, 3.5), "ft": 0.0, "base_sc": sc
+	})
+
+
+func _update_creatures(delta: float) -> void:
+	for c in creatures:
+		var node: Node2D = c["node"]
+		if inside:
+			node.visible = false
+			continue
+		node.visible = true
+		var spr: Sprite2D = c["spr"]
+		c["ft"] += delta
+		if c["state"] == "idle":
+			spr.texture = c["idle"]
+			c["t"] -= delta
+			if c["t"] <= 0.0:
+				var ang := randf() * TAU
+				var rad := randf_range(80.0, 260.0)
+				c["target"] = c["home"] + Vector2(cos(ang), sin(ang)) * rad
+				c["state"] = "walk"
+				c["ft"] = 0.0
+		else:
+			var to: Vector2 = c["target"] - node.position
+			var d: float = to.length()
+			if d < 8.0:
+				c["state"] = "idle"
+				c["t"] = randf_range(1.5, 4.0)
+				spr.texture = c["idle"]
+			else:
+				var dir: Vector2 = to / d
+				node.position += dir * c["speed"] * delta
+				var bsc: float = c["base_sc"]
+				spr.scale.x = bsc if dir.x >= 0.0 else -bsc
+				var wf: Array = c["walk"]
+				if wf.size() > 0:
+					spr.texture = wf[int(c["ft"] * 6.0) % wf.size()]
 
 
 func _build_throne(c: Vector2) -> void:
@@ -1083,6 +1155,7 @@ func _process(delta: float) -> void:
 			npc_say.visible = false
 
 	_update_projectiles(delta)
+	_update_creatures(delta)
 	if sprite == null:
 		return
 
