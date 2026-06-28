@@ -153,6 +153,7 @@ void fragment() {
 
 
 func _ready() -> void:
+	RenderingServer.set_default_clear_color(Color(1, 0, 0))
 	texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
 	_load_textures()
 	_load_ground()
