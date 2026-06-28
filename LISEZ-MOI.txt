@@ -1,0 +1,32 @@
+SYLVELINNE — INTRO JOUABLE (v25)
+=================================
+
+Au lancement du jeu, une cinematique d'introduction se joue, fidele a
+notre histoire (Acte I de la bible) :
+
+- Carte-titre "SYLVELINNE — Le Souffle des Saisons"
+- L'arrivee du Grand Silence (les Esprits se taisent, le printemps gele)
+- Aela, la jeune elfe qui entend les Esprits (le don de l'Ecoute)
+- Le reveil de BOURRU, ton tout premier Esprit (graine de pissenlit ronchonne)
+- L'appel vers Aldevane, l'Arbre-Monde
+
+COMMENT CA MARCHE
+-----------------
+- La cinematique se lance toute seule au demarrage.
+- Appuie n'importe ou sur l'ecran pour faire defiler les repliques.
+- Bouton "Passer >" en haut a droite pour sauter l'intro a tout moment.
+- A la fin, tu reprends le controle d'Aela dans le village, avec un
+  objectif : "Rejoins Aldevane, l'Arbre-Monde, au coeur du village."
+
+(Pour l'instant l'intro rejoue a chaque lancement, pratique pour tester.
+Quand on ajoutera les sauvegardes, on la passera en "une seule fois".)
+
+Aucun nouvel asset n'est necessaire : l'intro s'affiche par-dessus le
+village deja en place. Plus tard on pourra ajouter un vrai dessin-titre
+et le sprite de Bourru pour l'enrichir.
+
+INSTALLATION (Termux, copier-coller)
+------------------------------------
+cd ~/storage/shared/Download/Sylvelinne ; unzip -o ~/storage/shared/Download/intro_pack.zip ; git add . ; git commit -m "Intro jouable v25" ; git push
+
+Puis : onglet Actions sur GitHub -> coche verte -> Artifacts -> APK.
