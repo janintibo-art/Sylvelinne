@@ -376,12 +376,15 @@ func _create_npc(room: int, rel: Vector2, name: String, brain, height: float) ->
 	var frames := {"idle": [], "greet": [], "react": []}
 	var sprite_node: Sprite2D = null
 	var base_path := "res://assets/characters/%s.png" % name
-	if ResourceLoader.exists(base_path):
-		frames["idle"].append(load(base_path))
+	var _t0 = load(base_path) if ResourceLoader.exists(base_path) else null
+	if _t0 != null:
+		frames["idle"].append(_t0)
 		for key in ["greet", "react"]:
 			var i := 0
 			while ResourceLoader.exists("res://assets/characters/%s_%s_%02d.png" % [name, key, i]):
-				frames[key].append(load("res://assets/characters/%s_%s_%02d.png" % [name, key, i]))
+				var _fr = load("res://assets/characters/%s_%s_%02d.png" % [name, key, i])
+				if _fr != null:
+					frames[key].append(_fr)
 				i += 1
 		sprite_node = Sprite2D.new()
 		var tex0: Texture2D = frames["idle"][0]
