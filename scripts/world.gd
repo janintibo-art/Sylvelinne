@@ -179,7 +179,7 @@ func _ready() -> void:
 	_create_hud()
 	_create_inventory()
 	_create_particles()
-	_create_postfx()
+	#_create_postfx()  # desactive gris
 	_build_cutscene_ui()
 	queue_redraw()
 	_start_intro()
