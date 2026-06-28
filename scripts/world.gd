@@ -180,7 +180,9 @@ func _ready() -> void:
 	_create_inventory()
 	_create_particles()
 	_create_postfx()
+	_build_cutscene_ui()
 	queue_redraw()
+	_start_intro()
 
 
 func _load_textures() -> void:
@@ -1066,6 +1068,10 @@ func _spawn_projectile() -> void:
 
 
 func _physics_process(_delta: float) -> void:
+	if in_cutscene:
+		player.velocity = Vector2.ZERO
+		player.move_and_slide()
+		return
 	if casting or (inv_root != null and inv_root.visible):
 		player.velocity = Vector2.ZERO
 		player.move_and_slide()
@@ -1085,6 +1091,14 @@ func _physics_process(_delta: float) -> void:
 
 
 func _process(delta: float) -> void:
+	if in_cutscene:
+		if enter_btn != null:
+			enter_btn.visible = false
+		if exit_btn != null:
+			exit_btn.visible = false
+		if act_btn != null:
+			act_btn.visible = false
+		return
 	wind_phase += delta
 	wind_str = 0.55 + 0.28 * sin(wind_phase * 0.6) + 0.14 * sin(wind_phase * 1.7 + 1.0)
 	for sw in sway_sprites:
@@ -1227,6 +1241,10 @@ func _update_projectiles(delta: float) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	if in_cutscene:
+		if event is InputEventScreenTouch and event.pressed:
+			_cutscene_advance()
+		return
 	if inv_root != null and inv_root.visible:
 		return
 	if event is InputEventScreenTouch:
@@ -2050,3 +2068,240 @@ func _dungeon_act() -> void:
 				near_dsearch = false
 				act_btn.visible = false
 				return
+
+
+# ============================================================
+# CINEMATIQUE D'INTRODUCTION (fidele a la bible : Acte I)
+# ============================================================
+const INTRO_TITLE: String = "SYLVELINNE"
+const INTRO_SUB: String = "Le Souffle des Saisons"
+const INTRO_BEATS: Array = [
+	{"who": "", "txt": "Jadis, le monde respirait au rythme des saisons, chantees par les Esprits de la nature."},
+	{"who": "", "txt": "Au coeur de tout veillait Aldevane, l'Arbre-Monde, dont le Souffle faisait tourner la roue du temps."},
+	{"who": "", "txt": "Mais un a un, les Esprits se sont tus. Les fleurs sont restees en bouton, et une grisaille a gagne le monde."},
+	{"who": "", "txt": "On l'appelle le Grand Silence."},
+	{"who": "", "txt": "Au village de Val-aux-Murmures vit une jeune elfe qu'on prend pour une reveuse."},
+	{"who": "Aela", "txt": "Vous les entendez, vous aussi ? Les petites voix, dans le vent... Non ? ...Comme d'habitude."},
+	{"who": "", "txt": "Aela possede un don que tous ont oublie : l'Ecoute. Elle entend ce que le monde a cesse d'ecouter."},
+	{"who": "", "txt": "Ce matin-la, meme les murmures se sont eteints. Le printemps ne venait plus."},
+	{"who": "Aela", "txt": "Plus rien... Le silence, partout. Qu'est-ce qui t'arrive, Aldevane ?"},
+	{"who": "", "txt": "Au pied d'un buisson gris, un dernier bourgeon s'accrochait a la vie. Aela s'agenouilla, et ecouta."},
+	{"who": "Aela", "txt": "N'aie pas peur... Je suis la. Reveille-toi."},
+	{"who": "", "txt": "Le bourgeon fremit. Une petite graine duveteuse en jaillit, ronchonne et ebouriffee."},
+	{"who": "Bourru", "txt": "He ! On ne reveille pas les gens comme ca ! ...Hmpf. Toi, la. Tu m'entends ? Vraiment ?"},
+	{"who": "Bourru", "txt": "Bourru, c'est mon nom. Et apparemment... te voila coincee avec moi."},
+	{"who": "Aela", "txt": "Tu parles ! Tu es un Esprit... Alors c'est vrai, je peux encore vous entendre !"},
+	{"who": "", "txt": "Si une seule personne entend encore les Esprits, alors tout n'est pas perdu."},
+	{"who": "Bourru", "txt": "L'Arbre-Monde s'eteint, gamine. Si quelqu'un peut rallumer les saisons... ce sera toi. Allez, en route."},
+	{"who": "", "txt": "Aela serra son courage contre elle, et fit son premier pas vers Aldevane."}
+]
+
+var in_cutscene: bool = false
+var intro_done: bool = false
+var cut_index: int = 0
+var cut_busy: bool = false
+var cut_layer: CanvasLayer
+var cut_dim: ColorRect
+var cut_top_bar: ColorRect
+var cut_bot_bar: ColorRect
+var cut_panel: ColorRect
+var cut_speaker: Label
+var cut_text: Label
+var cut_hint: Label
+var cut_title: Label
+var cut_subtitle: Label
+var cut_blocker: Button
+var cut_skip: Button
+var cut_fade: ColorRect
+
+
+func _build_cutscene_ui() -> void:
+	cut_layer = CanvasLayer.new()
+	cut_layer.layer = 20
+	add_child(cut_layer)
+
+	cut_dim = ColorRect.new()
+	cut_dim.color = Color(0, 0, 0, 0.16)
+	cut_dim.position = Vector2(0, 0)
+	cut_dim.size = Vector2(1920, 1080)
+	cut_dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	cut_layer.add_child(cut_dim)
+
+	cut_top_bar = ColorRect.new()
+	cut_top_bar.color = Color(0, 0, 0, 1)
+	cut_top_bar.position = Vector2(0, 0)
+	cut_top_bar.size = Vector2(1920, 160)
+	cut_top_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	cut_layer.add_child(cut_top_bar)
+
+	cut_bot_bar = ColorRect.new()
+	cut_bot_bar.color = Color(0, 0, 0, 1)
+	cut_bot_bar.position = Vector2(0, 720)
+	cut_bot_bar.size = Vector2(1920, 360)
+	cut_bot_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	cut_layer.add_child(cut_bot_bar)
+
+	cut_panel = ColorRect.new()
+	cut_panel.color = Color(0.06, 0.05, 0.09, 0.92)
+	cut_panel.position = Vector2(180, 772)
+	cut_panel.size = Vector2(1560, 268)
+	cut_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	cut_layer.add_child(cut_panel)
+
+	cut_speaker = Label.new()
+	cut_speaker.add_theme_font_size_override("font_size", 40)
+	cut_speaker.add_theme_color_override("font_color", Color(1.0, 0.85, 0.45))
+	cut_speaker.position = Vector2(214, 782)
+	cut_speaker.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	cut_layer.add_child(cut_speaker)
+
+	cut_text = Label.new()
+	cut_text.add_theme_font_size_override("font_size", 42)
+	cut_text.add_theme_color_override("font_color", Color(0.96, 0.96, 0.98))
+	cut_text.position = Vector2(214, 840)
+	cut_text.size = Vector2(1500, 180)
+	cut_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	cut_text.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	cut_layer.add_child(cut_text)
+
+	cut_hint = Label.new()
+	cut_hint.text = "> appuie pour continuer"
+	cut_hint.add_theme_font_size_override("font_size", 28)
+	cut_hint.add_theme_color_override("font_color", Color(0.7, 0.7, 0.78))
+	cut_hint.position = Vector2(1430, 994)
+	cut_hint.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	cut_layer.add_child(cut_hint)
+
+	cut_title = Label.new()
+	cut_title.text = INTRO_TITLE
+	cut_title.add_theme_font_size_override("font_size", 120)
+	cut_title.add_theme_color_override("font_color", Color(0.95, 0.92, 0.78))
+	cut_title.position = Vector2(0, 360)
+	cut_title.size = Vector2(1920, 140)
+	cut_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	cut_title.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	cut_layer.add_child(cut_title)
+
+	cut_subtitle = Label.new()
+	cut_subtitle.text = INTRO_SUB
+	cut_subtitle.add_theme_font_size_override("font_size", 50)
+	cut_subtitle.add_theme_color_override("font_color", Color(0.8, 0.86, 0.7))
+	cut_subtitle.position = Vector2(0, 500)
+	cut_subtitle.size = Vector2(1920, 70)
+	cut_subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	cut_subtitle.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	cut_layer.add_child(cut_subtitle)
+
+	cut_blocker = Button.new()
+	cut_blocker.flat = true
+	cut_blocker.focus_mode = Control.FOCUS_NONE
+	cut_blocker.position = Vector2(0, 0)
+	cut_blocker.size = Vector2(1920, 1080)
+	cut_blocker.add_theme_stylebox_override("normal", StyleBoxEmpty.new())
+	cut_blocker.add_theme_stylebox_override("hover", StyleBoxEmpty.new())
+	cut_blocker.add_theme_stylebox_override("pressed", StyleBoxEmpty.new())
+	cut_blocker.pressed.connect(_cutscene_advance)
+	cut_layer.add_child(cut_blocker)
+
+	cut_skip = Button.new()
+	cut_skip.text = "Passer >"
+	cut_skip.add_theme_font_size_override("font_size", 34)
+	cut_skip.size = Vector2(220, 80)
+	cut_skip.position = Vector2(1560, 40)
+	cut_skip.modulate = Color(1, 1, 1, 0.9)
+	cut_skip.pressed.connect(_cutscene_skip)
+	cut_layer.add_child(cut_skip)
+
+	cut_fade = ColorRect.new()
+	cut_fade.color = Color(0, 0, 0, 1)
+	cut_fade.position = Vector2(0, 0)
+	cut_fade.size = Vector2(1920, 1080)
+	cut_fade.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	cut_layer.add_child(cut_fade)
+
+	cut_layer.visible = false
+
+
+func _start_intro() -> void:
+	if intro_done:
+		return
+	in_cutscene = true
+	cut_layer.visible = true
+	cut_index = 0
+	cut_busy = true
+	_cutscene_show(0)
+	var tw := create_tween()
+	tw.tween_property(cut_fade, "color:a", 0.0, 1.0)
+	tw.tween_callback(_cut_unbusy)
+
+
+func _cut_unbusy() -> void:
+	cut_busy = false
+
+
+func _cutscene_show(i: int) -> void:
+	if i == 0:
+		cut_title.visible = true
+		cut_subtitle.visible = true
+		cut_panel.visible = false
+		cut_speaker.visible = false
+		cut_text.visible = false
+		cut_hint.visible = false
+		return
+	cut_title.visible = false
+	cut_subtitle.visible = false
+	cut_panel.visible = true
+	cut_text.visible = true
+	cut_hint.visible = true
+	var b: Dictionary = INTRO_BEATS[i - 1]
+	var who: String = b["who"]
+	cut_speaker.text = who
+	cut_speaker.visible = who != ""
+	cut_text.text = b["txt"]
+
+
+func _cutscene_advance() -> void:
+	if not in_cutscene or cut_busy:
+		return
+	cut_index += 1
+	if cut_index > INTRO_BEATS.size():
+		_end_intro()
+		return
+	_cutscene_show(cut_index)
+
+
+func _cutscene_skip() -> void:
+	if not in_cutscene or cut_busy:
+		return
+	_end_intro()
+
+
+func _end_intro() -> void:
+	cut_busy = true
+	var tw := create_tween()
+	tw.tween_property(cut_fade, "color:a", 1.0, 0.5)
+	tw.tween_callback(_cut_finish)
+	tw.tween_property(cut_fade, "color:a", 0.0, 0.7)
+	tw.tween_callback(_cut_show_objective)
+
+
+func _cut_finish() -> void:
+	in_cutscene = false
+	intro_done = true
+	cut_dim.visible = false
+	cut_top_bar.visible = false
+	cut_bot_bar.visible = false
+	cut_panel.visible = false
+	cut_speaker.visible = false
+	cut_text.visible = false
+	cut_hint.visible = false
+	cut_title.visible = false
+	cut_subtitle.visible = false
+	cut_blocker.visible = false
+	cut_skip.visible = false
+
+
+func _cut_show_objective() -> void:
+	cut_layer.visible = false
+	cut_busy = false
+	_show_toast("Rejoins Aldevane, l'Arbre-Monde, au coeur du village.")
